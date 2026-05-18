@@ -38,7 +38,7 @@ class BufferManager:
         wait_time_s = 0.0
 
         if self.wait_for_space and buffer_s > self.buffer_threshold_s:
-            wait_time_s = buffer_s - self.buffer_threshold_s
+            wait_time_s = max(0.0, buffer_s - self.buffer_threshold_s)
             buffer_s -= wait_time_s
             sim_time_s += wait_time_s
 

@@ -11,7 +11,7 @@ class SegmentCatalog(Protocol):
     ) -> list[dict[str, Any]]: ...
 
     def lookup(
-        self, video_name: str, codec, segment_number: int, bitrate: int
+        self, video_name: str, codec: str, segment_number: int, bitrate: int
     ) -> dict[str, Any]: ...
 
 
@@ -38,13 +38,12 @@ class TransitionInfoProvider(Protocol):
 
     def compute(
         self,
-        *,
         config: ScenarioConfig,
         state_t: dict[str, Any],
         action_t: dict[str, Any],
         segment: dict[str, Any],
         outcome_t: dict[str, Any],
-        state_t1: SimulatorState
+        state_t1: SimulatorState,
     ) -> dict[str, Any]:
         """
         Computes transition information based on the provided parameters.

@@ -13,7 +13,7 @@ class ScenarioConfig:
     trace_id: str
     policy_name: str
 
-    segment_duration: float
+    segment_duration_s: float
     max_buffer_s: float = 30.0
     initial_buffer_s: float = 0.0
 
@@ -32,12 +32,12 @@ class SimulatorState:
     segment_number: int
 
     sim_time_s: float
-
     buffer_s: float
-    buffer_bytes: int
 
-    last_bitrate_index: int
-    throughput_mbps: float
+    last_action: Action
+
+    last_throughput_mbps: float
+    last_rebuffer_time_s: float
 
     done: bool = False
 
@@ -55,8 +55,7 @@ class Transition:
 
     state_t: dict[str, Any]
     action_t: dict[str, Any]
-    outcome_t: dict[str, Any]
 
-    state_t1: SimulatorState
+    outcome_t: dict[str, Any]
 
     done: bool

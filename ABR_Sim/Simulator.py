@@ -31,31 +31,6 @@ class ABRSimulator:
         self.state: SimulatorState | None = None
         self.total_segments: int | None = None
 
-        self.initialized: bool = False
-
-    def init(self):
-        # Validate that the catalog has the required segments for the scenario
-        self.total_segments = self.catalog.num_segments(
-            self.config.video_name, self.config.codec
-        )
-        if self.total_segments == 0:
-            raise ValueError(
-                f"Segment catalog does not contain any segments for video {self.config.video_name} and codec {self.config.codec}"
-            )
-
-        self.state = SimulatorState(
-            scenario_id=self.config.scenario_id,
-            step_t=0,
-            segment_number=0,
-            sim_time_s=0.0,
-            buffer_s=self.config.initial_buffer_s,
-            buffer_kb=0,
-            last_bitrate_index=self.config.initial_bitrate_index,
-            throughput_mbps=self.config.initial_throughput_mbps,
-        )
-
-        self.initialized = True
-
     def reset(self) -> dict[str, Any]:
         self.total_segments = self.catalog.num_segments(
             self.config.video_name, self.config.codec
@@ -70,9 +45,11 @@ class ABRSimulator:
             buffer_kb=0,
             last_bitrate_index=self.config.initial_bitrate_index,
             throughput_mbps=self.config.initial_throughput_mbps,
+            last_action=Action(bitrate=self.config.initial_bitrate_index, vmaf=0.0),
+            done=False,
         )
 
-        return self._get_state_dict()
+        return self._get_state_dict(self.state)
 
     def current_segment(self) -> int:
         if self.state is None:
@@ -109,7 +86,7 @@ class ABRSimulator:
         state_t = self._get_state_dict(self.state)
 
         ladder = self.catalog.get_ladder(
-            self.config.video_name, self.config.codec, self.state.segment_number
+            self.config.video_name, self.state.segment_number
         )
 
         # Get Action Dict
@@ -125,6 +102,12 @@ class ABRSimulator:
             self.state.segment_number,
             action.bitrate,
         )
+
+        action_t = self._build_action_dict(action, segment)
+
+        ##
+        # Buffer Management
+        ##
 
         segment_size_bits = float(segment["encoded_segment_size"]) * 8.0
 
@@ -152,29 +135,18 @@ class ABRSimulator:
         next_segment_number = self.state.segment_number + 1
         done = next_segment_number >= self.total_segments
 
-        next_state = SimulatorState(
-            step_t=self.state.step_t + 1,
-            segment_number=next_segment_number,
-            sim_time_s=post_buffer_info.download_end_time_s,
-            buffer_s=post_buffer_info.buffer_s_next,
-            throughput_estimate_mbps=next_throughput_estimate_mbps,
-            last_bitrate=action.bitrate,
-            done=done,
-        )
-
-        state_t1 = self._get_state_dict(next_state)
-
         outcome_t = {
             "segment_number": self.state.segment_number,
-            "encoded_segment_size": segment["encoded_segment_size"],
             # Network Info
             "download_time_s": download_time_s,
             "measured_throughput_mbps": throughput_mbps,
             # Buffer Info
+            # -Pre Buffer Management
             "buffer_s_before_wait": prebuffer_info.buffer_s_before_wait,
             "wait_time_s": prebuffer_info.wait_time_s,
             "buffer_s_before_download": prebuffer_info.buffer_s_before_download,
             "download_start_time_s": prebuffer_info.download_start_time_s,
+            # -Post Buffer Management
             "rebuffer_time_s": post_buffer_info.rebuffer_time_s,
             "buffer_s_after_download": post_buffer_info.buffer_s_after_download,
             "buffer_s_next": post_buffer_info.buffer_s_next,
@@ -189,7 +161,6 @@ class ABRSimulator:
                     action_t=action_t,
                     segment=segment,
                     outcome_t=outcome_t,
-                    state_t1=state_t1,
                 )
 
                 overlap = set(outcome_t).intersection(provider_data)
@@ -207,11 +178,10 @@ class ABRSimulator:
             state_t=state_t,
             action_t=action_t,
             outcome_t=outcome_t,
-            state_t1=state_t1,
             done=done,
         )
 
-        self.state = next_state
+        self.state = self._build_next_state(transition)
 
         return transition
 
@@ -229,17 +199,46 @@ class ABRSimulator:
             "sim_time_s": state.sim_time_s,
             "buffer_s": state.buffer_s,
             "buffer_fraction": state.buffer_s / self.config.max_buffer_s,
-            "throughput_estimate_mbps": state.throughput_estimate_mbps,
-            "last_bitrate": state.last_bitrate,
+            "action": state.last_action,
+            "throughput_mbps": state.last_throughput_mbps,
+            "rebuffer_time_s": state.last_rebuffer_time_s,
+            "done": state.done,
         }
 
-    def _estimate_throughput(
-        self,
-        previous_estimate_mbps: float,
-        measured_throughput_mbps: float,
-        alpha: float = 0.5,
-    ) -> float:
-        if previous_estimate_mbps is None or previous_estimate_mbps == 0.0:
-            return measured_throughput_mbps
+    def _build_action_dict(
+        self, action: Action, segment: dict[str, Any]
+    ) -> dict[str, Any]:
+        action_dict = {
+            x: getattr(action, x) for x in action.__dataclass_fields__.keys()
+        }
 
-        return alpha * measured_throughput_mbps + (1 - alpha) * previous_estimate_mbps
+        # Add Segment Info to Action Dict
+        action_dict.update(
+            {
+                "codec": self.config.codec,
+                "encoded_segment_size": segment["encoded_segment_size"],
+            }
+        )
+
+        return action_dict
+
+    def _build_next_state(
+        self,
+        current_state: SimulatorState,
+        action_t: dict[str, Any],
+        outcome_t: dict[str, Any],
+        done: bool,
+    ) -> SimulatorState:
+        next_state = SimulatorState(
+            scenario_id=current_state.scenario_id,
+            step_t=current_state.step_t + 1,
+            segment_number=current_state.segment_number + 1,
+            sim_time_s=outcome_t["download_end_time_s"],
+            buffer_s=outcome_t["buffer_s_next"],
+            last_action=Action(bitrate=action_t["bitrate"], vmaf=0.0),
+            last_throughput_mbps=outcome_t["measured_throughput_mbps"],
+            last_rebuffer_time_s=outcome_t["rebuffer_time_s"],
+            done=done,
+        )
+
+        return next_state
