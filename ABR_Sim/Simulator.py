@@ -110,7 +110,7 @@ class ABRSimulator:
 
         download_time_s, throughput_traces_kbps = self.trace_provider.download(
             start_time_s=self.pre_buffer_info.download_start_time_s,
-            size_bits=encoded_segment_size_bytes,
+            segment_size_bytes=encoded_segment_size_bytes,
         )
 
         post_buffer_info = self.buffer_manager.complete_download(

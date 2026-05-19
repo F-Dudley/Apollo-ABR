@@ -39,6 +39,10 @@ class SimulatorState:
 @dataclass(frozen=True)
 class Action:
     bitrate_index: int
+    bitrate_kbps: int
+    resolution_width: str
+    resolution_height: str
+    vmaf: float
 
 
 @dataclass
