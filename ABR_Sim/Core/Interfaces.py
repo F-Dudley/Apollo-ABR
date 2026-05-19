@@ -1,6 +1,12 @@
 from typing import Any, Protocol
 
-from .Types import Action, SimulatorState, ScenarioConfig
+from .Types import (
+    Action,
+    SimulatorState,
+    ScenarioConfig,
+    BitrateLadder,
+    BitrateLadderEntry,
+)
 
 
 class SegmentCatalog(Protocol):
@@ -8,11 +14,15 @@ class SegmentCatalog(Protocol):
 
     def get_ladder(
         self, video_name: str, codec: str, segment_number: int
-    ) -> list[dict[str, Any]]: ...
+    ) -> BitrateLadder: ...
 
     def lookup(
-        self, video_name: str, codec: str, segment_number: int, bitrate: int
-    ) -> dict[str, Any]: ...
+        self,
+        video_name: str,
+        codec: str,
+        segment_number: int,
+        ladder_entry: BitrateLadderEntry,
+    ) -> BitrateLadder: ...
 
 
 class TraceProvider(Protocol):
@@ -28,7 +38,7 @@ class TraceProvider(Protocol):
 
 class ABRPolicy(Protocol):
     def select_action(
-        self, state_t: dict[str, Any], ladder: list[dict[str, Any]]
+        self, state_t: SimulatorState, ladder: BitrateLadder
     ) -> Action: ...
 
 

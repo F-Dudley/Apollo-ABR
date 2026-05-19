@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, TypedDict
 
 
 @dataclass(frozen=True)
@@ -34,18 +34,12 @@ class SimulatorState:
     sim_time_s: float
     buffer_s: float
 
-    last_action: Action
-
-    last_throughput_mbps: float
-    last_rebuffer_time_s: float
-
     done: bool = False
 
 
-@dataclass
+@dataclass(frozen=True)
 class Action:
-    bitrate: int
-    vmaf: float
+    bitrate_index: int
 
 
 @dataclass
@@ -53,9 +47,29 @@ class Transition:
     scenario_id: str
     step_t: int
 
-    state_t: dict[str, Any]
-    action_t: dict[str, Any]
+    state_t: SimulatorState
+    action_t: Action
 
     outcome_t: dict[str, Any]
 
     done: bool
+
+
+class BitrateLadderEntry(TypedDict):
+    bitrate_kb: int
+    resolution_width: str
+    resolution_height: str
+    vmaf: float
+
+
+class BitrateLadder(TypedDict):
+    segment_number: int
+    entries: list[BitrateLadderEntry]
+
+    def get_entry(self, bitrate_index: int) -> BitrateLadderEntry:
+        if bitrate_index < 0 or bitrate_index >= len(self.entries):
+            raise ValueError(
+                f"Invalid bitrate index {bitrate_index} for segment {self.segment_number}. Valid range is [0, {len(self.entries) - 1}]."
+            )
+
+        return self.entries[bitrate_index]

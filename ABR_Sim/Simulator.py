@@ -1,4 +1,4 @@
-from types import Any
+from typing import Any
 
 from .Core.BufferManager import BufferManager
 
@@ -59,10 +59,10 @@ class ABRSimulator:
 
         return self.state.segment_number
 
-    def total_segments(self) -> int:
+    def num_segments(self) -> int:
         if self.total_segments is None:
             raise RuntimeError(
-                "Simulator not initialized. Please call init() before max_segments()."
+                "Simulator not initialized. Please call init() before num_segments()."
             )
 
         return self.total_segments
@@ -83,105 +83,97 @@ class ABRSimulator:
                 "Simulator not initialized. Please call init() before step()."
             )
 
-        state_t = self._get_state_dict(self.state)
-
-        ladder = self.catalog.get_ladder(
-            self.config.video_name, self.state.segment_number
+        #
+        # Current Segment / Action Selection
+        bitrate_ladder = self.catalog.get_ladder(
+            self.config.video_name, self.config.codec, self.state.segment_number
         )
 
-        # Get Action Dict
-        if action is None:
-            action = self.policy.select_action(state_t, ladder)
+        action_t = self.policy.select_action(self.state, bitrate_ladder)
 
-        action_t = {x: getattr(action, x) for x in action.__dataclass_fields__.keys()}
+        _ladder_entry = bitrate_ladder.get_entry(action_t.bitrate_index)
 
-        # Calculate Segment Info
-        segment = self.catalog.lookup(
+        segment_info = self.catalog.lookup(
             self.config.video_name,
             self.config.codec,
             self.state.segment_number,
-            action.bitrate,
+            _ladder_entry,
         )
 
-        action_t = self._build_action_dict(action, segment)
+        #
+        # Download / Through-put Calculations
+        encoded_segment_size_bits = segment_info["encoded_segment_size"] * 8
 
-        ##
-        # Buffer Management
-        ##
-
-        segment_size_bits = float(segment["encoded_segment_size"]) * 8.0
-
-        # Wait for Buffer Space, if too full for the next segment request.
-        prebuffer_info = self.buffer_manager.prepare_download(
-            self.state.buffer_s, self.state.sim_time_s
+        pre_buffer_info = self.buffer_manager.prepare_download(
+            buffer_s=self.state.buffer_s, sim_time_s=self.state.sim_time_s
         )
 
-        # Download Segment after waiting for buffer space, if required.
-
-        download_time_s, throughput_mbps = self.trace_provider.download(
-            prebuffer_info.download_start_time_s, segment_size_bits
+        download_time_s, throughput_kbps = self.trace_provider.download(
+            start_time_s=self.pre_buffer_info.download_start_time_s,
+            size_bits=encoded_segment_size_bits,
         )
 
         post_buffer_info = self.buffer_manager.complete_download(
-            prebuffer_info.buffer_s_before_download,
-            prebuffer_info.download_start_time_s,
-            download_time_s,
-        )
-
-        next_throughput_estimate_mbps = self._estimate_throughput(
-            self.state.throughput_mbps, throughput_mbps
+            buffer_s_before_download=pre_buffer_info.buffer_s_before_download,
+            download_start_time_s=pre_buffer_info.download_start_time_s,
+            download_time_s=download_time_s,
+            decoding_time_s=segment_info.get("decoding_time_s", 0.0),
         )
 
         next_segment_number = self.state.segment_number + 1
         done = next_segment_number >= self.total_segments
 
         outcome_t = {
+            "scenario_id": self.state.scenario_id,
+            "step_t": self.state.step_t,
             "segment_number": self.state.segment_number,
             # Network Info
             "download_time_s": download_time_s,
-            "measured_throughput_mbps": throughput_mbps,
+            "throughput_kbps": throughput_kbps,
             # Buffer Info
-            # -Pre Buffer Management
-            "buffer_s_before_wait": prebuffer_info.buffer_s_before_wait,
-            "wait_time_s": prebuffer_info.wait_time_s,
-            "buffer_s_before_download": prebuffer_info.buffer_s_before_download,
-            "download_start_time_s": prebuffer_info.download_start_time_s,
-            # -Post Buffer Management
+            "wait_time_s": pre_buffer_info.wait_time_s,
             "rebuffer_time_s": post_buffer_info.rebuffer_time_s,
-            "buffer_s_after_download": post_buffer_info.buffer_s_after_download,
             "buffer_s_next": post_buffer_info.buffer_s_next,
-            "download_end_time_s": post_buffer_info.download_end_time_s,
+            # Timing Info
+            "total_time_used_s": post_buffer_info.total_time_used_s,
         }
 
         if self.transition_info_providers:
             for provider in self.transition_info_providers:
-                provider_data = provider.compute(
+                additional_info = provider.compute(
                     config=self.config,
-                    state_t=state_t,
+                    state_t=self.state,
                     action_t=action_t,
-                    segment=segment,
+                    segment=segment_info,
                     outcome_t=outcome_t,
+                    state_t1=self._build_next_state(
+                        current_state=self.state,
+                        action_t=action_t,
+                        outcome_t=outcome_t,
+                        done=done,
+                    ),
                 )
 
-                overlap = set(outcome_t).intersection(provider_data)
+                overlap = set(outcome_t).intersection(additional_info)
                 if overlap:
                     raise KeyError(
-                        f"TransitionInfoProvider {provider.name} produced keys that overlap with existing outcome_t keys: {overlap}"
+                        f"Transition Info Provider '{provider.name}' returned keys that overlap with existing outcome_t keys: {overlap}"
                     )
 
-                outcome_t.update(provider_data)
+                outcome_t.update(additional_info)
 
-        # Generate The Final Transition
         transition = Transition(
-            scenario_id=self.config.scenario_id,
+            scenario_id=self.state.scenario_id,
             step_t=self.state.step_t,
-            state_t=state_t,
+            state_t=self.state,
             action_t=action_t,
             outcome_t=outcome_t,
             done=done,
         )
 
-        self.state = self._build_next_state(transition)
+        self.state = self._build_next_state(
+            current_state=self.state, action_t=action_t, outcome_t=outcome_t, done=done
+        )
 
         return transition
 
@@ -225,7 +217,7 @@ class ABRSimulator:
     def _build_next_state(
         self,
         current_state: SimulatorState,
-        action_t: dict[str, Any],
+        action_t: Action,
         outcome_t: dict[str, Any],
         done: bool,
     ) -> SimulatorState:
@@ -233,11 +225,8 @@ class ABRSimulator:
             scenario_id=current_state.scenario_id,
             step_t=current_state.step_t + 1,
             segment_number=current_state.segment_number + 1,
-            sim_time_s=outcome_t["download_end_time_s"],
+            sim_time_s=current_state.sim_time_s + outcome_t["total_time_used_s"],
             buffer_s=outcome_t["buffer_s_next"],
-            last_action=Action(bitrate=action_t["bitrate"], vmaf=0.0),
-            last_throughput_mbps=outcome_t["measured_throughput_mbps"],
-            last_rebuffer_time_s=outcome_t["rebuffer_time_s"],
             done=done,
         )
 
