@@ -50,7 +50,7 @@ class Transition:
     state_t: SimulatorState
     action_t: Action
 
-    outcome_t: dict[str, Any]
+    info_t: dict[str, Any]
 
     done: bool
 

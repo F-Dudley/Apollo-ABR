@@ -52,12 +52,12 @@ class TransitionInfoProvider(Protocol):
         state_t: dict[str, Any],
         action_t: dict[str, Any],
         segment: dict[str, Any],
-        outcome_t: dict[str, Any],
+        info_t: dict[str, Any],
         state_t1: SimulatorState,
     ) -> dict[str, Any]:
         """
         Computes transition information based on the provided parameters.
 
         Returns:
-            dict[str, Any]: A dictionary containing the computed transition information. Too be merged into outcome_t.
+            dict[str, Any]: A dictionary containing the computed transition information. Too be merged into info_t.
         """

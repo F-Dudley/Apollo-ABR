@@ -123,7 +123,7 @@ class ABRSimulator:
         next_segment_number = self.state.segment_number + 1
         done = next_segment_number >= self.total_segments
 
-        outcome_t = {
+        info_t = {
             "scenario_id": self.state.scenario_id,
             "step_t": self.state.step_t,
             "segment_number": self.state.segment_number,
@@ -138,6 +138,19 @@ class ABRSimulator:
             "total_time_used_s": post_buffer_info.total_time_used_s,
         }
 
+        transition = Transition(
+            scenario_id=self.state.scenario_id,
+            step_t=self.state.step_t,
+            state_t=self.state,
+            action_t=action_t,
+            info_t=info_t,
+            done=done,
+        )
+
+        next_state = self._build_next_state(
+            current_state=self.state, action_t=action_t, info_t=info_t, done=done
+        )
+
         if self.transition_info_providers:
             for provider in self.transition_info_providers:
                 additional_info = provider.compute(
@@ -145,35 +158,19 @@ class ABRSimulator:
                     state_t=self.state,
                     action_t=action_t,
                     segment=segment_info,
-                    outcome_t=outcome_t,
-                    state_t1=self._build_next_state(
-                        current_state=self.state,
-                        action_t=action_t,
-                        outcome_t=outcome_t,
-                        done=done,
-                    ),
+                    info_t=info_t,
+                    state_t1=next_state,
                 )
 
-                overlap = set(outcome_t).intersection(additional_info)
+                overlap = set(info_t).intersection(additional_info)
                 if overlap:
                     raise KeyError(
-                        f"Transition Info Provider '{provider.name}' returned keys that overlap with existing outcome_t keys: {overlap}"
+                        f"Transition Info Provider '{provider.name}' returned keys that overlap with existing info_t keys: {overlap}"
                     )
 
-                outcome_t.update(additional_info)
+                info_t.update(additional_info)
 
-        transition = Transition(
-            scenario_id=self.state.scenario_id,
-            step_t=self.state.step_t,
-            state_t=self.state,
-            action_t=action_t,
-            outcome_t=outcome_t,
-            done=done,
-        )
-
-        self.state = self._build_next_state(
-            current_state=self.state, action_t=action_t, outcome_t=outcome_t, done=done
-        )
+        self.state = next_state
 
         return transition
 
@@ -184,18 +181,7 @@ class ABRSimulator:
         if state is None:
             raise RuntimeError("Simulator not initialized. State is None.")
 
-        return {
-            "scenario_id": state.scenario_id,
-            "step_t": state.step_t,
-            "segment_number": state.segment_number,
-            "sim_time_s": state.sim_time_s,
-            "buffer_s": state.buffer_s,
-            "buffer_fraction": state.buffer_s / self.config.max_buffer_s,
-            "action": state.last_action,
-            "throughput_mbps": state.last_throughput_mbps,
-            "rebuffer_time_s": state.last_rebuffer_time_s,
-            "done": state.done,
-        }
+        return {x: getattr(state, x) for x in state.__dataclass_fields__.keys()}
 
     def _build_action_dict(
         self, action: Action, segment: dict[str, Any]
@@ -218,15 +204,15 @@ class ABRSimulator:
         self,
         current_state: SimulatorState,
         action_t: Action,
-        outcome_t: dict[str, Any],
+        info_t: dict[str, Any],
         done: bool,
     ) -> SimulatorState:
         next_state = SimulatorState(
             scenario_id=current_state.scenario_id,
             step_t=current_state.step_t + 1,
             segment_number=current_state.segment_number + 1,
-            sim_time_s=current_state.sim_time_s + outcome_t["total_time_used_s"],
-            buffer_s=outcome_t["buffer_s_next"],
+            sim_time_s=current_state.sim_time_s + info_t["total_time_used_s"],
+            buffer_s=info_t["buffer_s_next"],
             done=done,
         )
 
