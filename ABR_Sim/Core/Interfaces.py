@@ -64,3 +64,4 @@ class TransitionInfoProvider(Protocol):
         Returns:
             dict[str, Any]: A dictionary containing the computed transition information. Too be merged into info_t.
         """
+        ...

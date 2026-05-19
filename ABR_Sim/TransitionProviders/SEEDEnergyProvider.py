@@ -7,6 +7,16 @@ class SEEDEnergyProvider(TransitionInfoProvider):
 
     name = "SEED Energy Provider"
 
+    def __init__(self):
+        super().__init__()
+
+        # Ethernet Constants Metrics (1GB Rate - Active/Idle Toggling with 0BASE-x for Energy Efficient Ethernet, November 2007 IEEE 802.3az Task Force)
+        self.ethernet_active_w = 1.217
+        self.ethernet_idle_w = 1.010
+
+        # LTE Constants Metrics
+        self.lte_p_conn_w = 1.53
+        self.lte_p_rb_w = 0.42
 
     def compute(
         self,
@@ -40,8 +50,14 @@ class SEEDEnergyProvider(TransitionInfoProvider):
 
             case "LTE" | "5G":
 
-                avg_signal_strength_dbm = np.mean(signal_strength_dbm) if len(signal_strength_dbm) > 0 else -60.0
-                avg_throughput_kbps = np.mean(throughputs_kbps) if len(throughputs_kbps) > 0 else 0.0
+                avg_signal_strength_dbm = (
+                    np.mean(signal_strength_dbm)
+                    if len(signal_strength_dbm) > 0
+                    else -60.0
+                )
+                avg_throughput_kbps = (
+                    np.mean(throughputs_kbps) if len(throughputs_kbps) > 0 else 0.0
+                )
                 avg_throughput_mbps = avg_throughput_kbps / 1000.0
 
                 used_energy_ret_j = self._energy_estimate_lte(
@@ -57,19 +73,23 @@ class SEEDEnergyProvider(TransitionInfoProvider):
             "used_energy_display": used_energy_display_j,
         }
 
-    def _energy_estimate_eth(download_period: float, )
+    def _energy_estimate_eth(
+        self,
+        download_period: float,
+    ) -> float:
+
+        pass
 
     def _energy_estimate_lte(
+        self,
         signal_strength_dbm: float,
         downlink_throughput: float,
         download_period: float,
     ) -> float:
 
-        P_conn = 1.53
-        P_rb = 0.42
         p_rx_rf = (1889.0 - 1.11 * signal_strength_dbm) / 1000
         p_rx_bb = (1923.0 + 2.89 * downlink_throughput) / 1000
 
-        second_estimate = P_conn + P_rb + p_rx_rf + p_rx_bb
+        second_estimate = self.lte_p_conn_w + self.lte_p_rb_w + p_rx_rf + p_rx_bb
 
         return second_estimate * download_period
