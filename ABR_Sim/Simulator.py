@@ -102,15 +102,15 @@ class ABRSimulator:
 
         #
         # Download / Through-put Calculations
-        encoded_segment_size_bits = segment_info["encoded_segment_size"] * 8
+        encoded_segment_size_bytes = segment_info["encoded_segment_size"]
 
         pre_buffer_info = self.buffer_manager.prepare_download(
             buffer_s=self.state.buffer_s, sim_time_s=self.state.sim_time_s
         )
 
-        download_time_s, throughput_kbps = self.trace_provider.download(
+        download_time_s, throughput_traces_kbps = self.trace_provider.download(
             start_time_s=self.pre_buffer_info.download_start_time_s,
-            size_bits=encoded_segment_size_bits,
+            size_bits=encoded_segment_size_bytes,
         )
 
         post_buffer_info = self.buffer_manager.complete_download(
@@ -120,16 +120,13 @@ class ABRSimulator:
             decoding_time_s=segment_info.get("decoding_time_s", 0.0),
         )
 
-        next_segment_number = self.state.segment_number + 1
-        done = next_segment_number >= self.total_segments
-
         info_t = {
             "scenario_id": self.state.scenario_id,
             "step_t": self.state.step_t,
             "segment_number": self.state.segment_number,
             # Network Info
             "download_time_s": download_time_s,
-            "throughput_kbps": throughput_kbps,
+            "throughput_kbps": throughput_traces_kbps,
             # Buffer Info
             "wait_time_s": pre_buffer_info.wait_time_s,
             "rebuffer_time_s": post_buffer_info.rebuffer_time_s,
@@ -137,6 +134,9 @@ class ABRSimulator:
             # Timing Info
             "total_time_used_s": post_buffer_info.total_time_used_s,
         }
+
+        next_segment_number = self.state.segment_number + 1
+        done = next_segment_number >= self.total_segments
 
         transition = Transition(
             scenario_id=self.state.scenario_id,
@@ -207,12 +207,22 @@ class ABRSimulator:
         info_t: dict[str, Any],
         done: bool,
     ) -> SimulatorState:
+        new_segment_number = current_state.segment_number + 1
+
+        remaining_segments = (
+            max(0, self.total_segments - new_segment_number)
+            if self.total_segments is not None
+            else 0
+        )
+
         next_state = SimulatorState(
             scenario_id=current_state.scenario_id,
             step_t=current_state.step_t + 1,
-            segment_number=current_state.segment_number + 1,
+            segment_number=new_segment_number,
+            segments_remaining=remaining_segments,
             sim_time_s=current_state.sim_time_s + info_t["total_time_used_s"],
             buffer_s=info_t["buffer_s_next"],
+            last_action=action_t,
             done=done,
         )
 

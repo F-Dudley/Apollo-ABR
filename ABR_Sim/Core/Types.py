@@ -13,15 +13,11 @@ class ScenarioConfig:
     trace_id: str
     policy_name: str
 
-    segment_duration_s: float
+    segment_duration_s: float = 5.0
     max_buffer_s: float = 30.0
     initial_buffer_s: float = 0.0
 
-    # Initial Parameters
-    initial_bitrate_index: int = None
-    initial_buffer_s: float = None
-    initial_buffer_kb: int = None
-    initial_throughput_mbps: float = None
+    initial_buffer_s: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -30,9 +26,12 @@ class SimulatorState:
 
     step_t: int
     segment_number: int
+    segments_remaining: int
 
     sim_time_s: float
     buffer_s: float
+
+    last_action: Action
 
     done: bool = False
 
@@ -52,7 +51,7 @@ class Transition:
 
     info_t: dict[str, Any]
 
-    done: bool
+    done: bool = False
 
 
 class BitrateLadderEntry(TypedDict):

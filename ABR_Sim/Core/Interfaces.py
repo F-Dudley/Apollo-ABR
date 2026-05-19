@@ -27,11 +27,13 @@ class SegmentCatalog(Protocol):
 
 class TraceProvider(Protocol):
 
-    def download(self, start_time_s: float, size_bits: float) -> tuple[float, float]:
+    def download(
+        self, start_time_s: float, segment_size_bytes: float
+    ) -> tuple[float, list[float]]:
         """
         Returns:
             download_time_s: float
-            throughput_mbps: float
+            throughput_trace_kbps: list[float]
         """
         ...
 
