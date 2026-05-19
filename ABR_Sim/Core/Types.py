@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
+
+type NICType = Literal["Eth", "WiFi", "LTE", "5G"]
 
 
 @dataclass(frozen=True)
@@ -10,6 +12,7 @@ class ScenarioConfig:
 
     video_name: str
     codec: str
+    nic: NICType
     trace_id: str
     policy_name: str
 

@@ -29,11 +29,12 @@ class TraceProvider(Protocol):
 
     def download(
         self, start_time_s: float, segment_size_bytes: float
-    ) -> tuple[float, list[float]]:
+    ) -> tuple[float, list[float], list[float]]:
         """
         Returns:
             download_time_s: float
-            throughput_trace_kbps: list[float]
+            throughput_trace_kbps: list[float],
+            signal_strength_dbm: list[float]
         """
         ...
 
