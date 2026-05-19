@@ -4,10 +4,10 @@ import pandas as pd
 from ..Core.Interfaces import TraceProvider
 
 # Provider Expects CSV Files with the following columns:
-# timestamp_s, throughput_kbps, signal_strength_dbm (either RSRP_dBm / RSPI_dBm former preferred)
+# timestamp_s, throughput_bytes, signal_strength_dbm (optional), RSPI_dbm (optional), RSRP_dbm (optional)
 
 
-class LTETraceProvider(TraceProvider):
+class StandardTraceProvider(TraceProvider):
 
     def __init__(self, trace_file_path: str, allow_loop: bool = True):
         self.trace_file_path = trace_file_path
@@ -18,6 +18,10 @@ class LTETraceProvider(TraceProvider):
 
         self.trace_df = pd.read_csv(trace_file_path)
         self.current_idx = 0
+
+        self.has_signal_strength = "signal_strength_dbm" in self.trace_df.columns
+        self.has_rsrp = "RSRP_dbm" in self.trace_df.columns
+        self.has_rspi = "RSPI_dbm" in self.trace_df.columns
 
     def download(
         self, start_time_s: float, wait_time_s: float, segment_size_bytes: float
@@ -36,10 +40,17 @@ class LTETraceProvider(TraceProvider):
             row = self.trace_df.iloc[self.current_idx]
 
             throughput = row["throughput_bytes"]
-            signal_strength = row["signal_strength_dbm"]
+            throughputs_kbps.append(throughput / 1000.0)  # Convert to kbps
 
-            throughputs_kbps.append(throughput)
-            signal_strength_dbm.append(signal_strength)
+            if self.has_signal_strength:
+                signal_strength = row["signal_strength_dbm"]
+            elif self.has_rsrp:
+                signal_strength = row["RSRP_dbm"]
+            elif self.has_rspi:
+                signal_strength = row["RSPI_dbm"]
+            else:
+                signal_strength = 0.0
+                signal_strength_dbm.append(signal_strength)
 
             segment_size_bytes -= throughput
             download_time_s += 1.0
