@@ -18,6 +18,10 @@ class SEEDEnergyProvider(TransitionInfoProvider):
         self.lte_p_conn_w = 1.53
         self.lte_p_rb_w = 0.42
 
+        # Fallbacks
+        self.default_signal_strength_dbm = -60.0
+        self.default_throughput_kbps = 1000.0
+
     def compute(
         self,
         config,
@@ -39,13 +43,15 @@ class SEEDEnergyProvider(TransitionInfoProvider):
         used_energy_decoding_j = segment.get("used_energy_decoding", 0.0)
         used_energy_display_j = segment.get("used_energy_display", 0.0)
 
-        used_energy_ret = 0.0
+        used_energy_ret_j = 0.0
 
         match config.nic:
 
             case "Eth":
-                used_energy_ret = self._energy_estimate_eth(
+                used_energy_ret_j = self._energy_estimate_eth(
                     download_period=download_time_s,
+                    wait_time_s=info_t.get("wait_time_s", 0.0),
+                    throughputs_kbps=throughputs_kbps,
                 )
 
             case "LTE" | "5G":
@@ -53,10 +59,12 @@ class SEEDEnergyProvider(TransitionInfoProvider):
                 avg_signal_strength_dbm = (
                     np.mean(signal_strength_dbm)
                     if len(signal_strength_dbm) > 0
-                    else -60.0
+                    else self.default_signal_strength_dbm
                 )
                 avg_throughput_kbps = (
-                    np.mean(throughputs_kbps) if len(throughputs_kbps) > 0 else 0.0
+                    np.mean(throughputs_kbps)
+                    if len(throughputs_kbps) > 0
+                    else self.default_throughput_kbps
                 )
                 avg_throughput_mbps = avg_throughput_kbps / 1000.0
 
@@ -76,9 +84,14 @@ class SEEDEnergyProvider(TransitionInfoProvider):
     def _energy_estimate_eth(
         self,
         download_period: float,
+        wait_time_s: float,
+        throughputs_kbps: float,
     ) -> float:
 
-        pass
+        idle_power_j = self.ethernet_idle_w * wait_time_s
+        active_power_j = self.ethernet_active_w * download_period
+
+        return idle_power_j + active_power_j
 
     def _energy_estimate_lte(
         self,
