@@ -62,7 +62,7 @@ class Transition:
 
 
 class BitrateLadderEntry(TypedDict):
-    bitrate_kb: int
+    bitrate_kbps: int
     resolution_width: str
     resolution_height: str
     vmaf: float
@@ -71,6 +71,9 @@ class BitrateLadderEntry(TypedDict):
 class BitrateLadder(TypedDict):
     segment_number: int
     entries: list[BitrateLadderEntry]
+
+    def __len__(self) -> int:
+        return len(self.entries)
 
     def get_entry(self, bitrate_index: int) -> BitrateLadderEntry:
         if bitrate_index < 0 or bitrate_index >= len(self.entries):
