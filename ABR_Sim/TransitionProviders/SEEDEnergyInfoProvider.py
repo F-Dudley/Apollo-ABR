@@ -3,7 +3,7 @@ from ..Core.Interfaces import TransitionInfoProvider
 import numpy as np
 
 
-class SEEDEnergyProvider(TransitionInfoProvider):
+class SEEDEnergyInfoProvider(TransitionInfoProvider):
 
     name = "SEED Energy Provider"
 

@@ -37,6 +37,7 @@ class ABRSimulator:
         )
 
         self.state = SimulatorState(
+            config=self.config,
             scenario_id=self.config.scenario_id,
             step_t=0,
             segment_number=0,
@@ -45,7 +46,13 @@ class ABRSimulator:
             buffer_kb=0,
             last_bitrate_index=self.config.initial_bitrate_index,
             throughput_mbps=self.config.initial_throughput_mbps,
-            last_action=Action(bitrate=self.config.initial_bitrate_index, vmaf=0.0),
+            last_action=Action(
+                bitrate=self.config.initial_bitrate_index,
+                vmaf=0.0,
+                segment_size_bytes=0,
+                resolution_width=0,
+                resolution_height=0,
+            ),
             done=False,
         )
 

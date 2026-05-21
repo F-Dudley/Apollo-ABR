@@ -20,4 +20,5 @@ class RandomPolicy(ABRPolicy):
             resolution_width=ladder_entry["resolution_width"],
             resolution_height=ladder_entry["resolution_height"],
             vmaf=ladder_entry["vmaf"],
+            segment_size_bytes=ladder_entry["segment_size_bytes"],
         )

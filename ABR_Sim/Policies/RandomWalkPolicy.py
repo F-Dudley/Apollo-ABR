@@ -27,6 +27,7 @@ class RandomWalkPolicy(ABRPolicy):
             resolution_width=new_idx_entry["resolution_width"],
             resolution_height=new_idx_entry["resolution_height"],
             vmaf=new_idx_entry["vmaf"],
+            segment_size_bytes=new_idx_entry["segment_size_bytes"],
         )
 
     def _get_stepped_bitrate_index(self, action, num_representations) -> int:

@@ -20,11 +20,11 @@ class ScenarioConfig:
     max_buffer_s: float = 30.0
     initial_buffer_s: float = 0.0
 
-    initial_buffer_s: float = 0.0
-
 
 @dataclass(frozen=True)
 class SimulatorState:
+    config: ScenarioConfig
+
     scenario_id: str
 
     step_t: int
@@ -47,6 +47,8 @@ class Action:
     resolution_height: str
     vmaf: float
 
+    segment_size_bytes: int
+
 
 @dataclass
 class Transition:
@@ -66,6 +68,8 @@ class BitrateLadderEntry(TypedDict):
     resolution_width: str
     resolution_height: str
     vmaf: float
+
+    segment_size_bytes: int
 
 
 class BitrateLadder(TypedDict):
