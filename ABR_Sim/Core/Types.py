@@ -35,6 +35,7 @@ class SimulatorState:
     buffer_s: float
 
     last_action: Action
+    last_throughputs_kbps: list[float]
 
     done: bool = False
 
@@ -78,6 +79,9 @@ class BitrateLadder(TypedDict):
 
     def __len__(self) -> int:
         return len(self.entries)
+
+    def __iter__(self) -> iter[BitrateLadderEntry]:
+        return iter(self.entries)
 
     def get_entry(self, bitrate_index: int) -> BitrateLadderEntry:
         if bitrate_index < 0 or bitrate_index >= len(self.entries):

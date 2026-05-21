@@ -102,7 +102,10 @@ class ABRSimulator:
             self.config.video_name, self.config.codec, self.state.segment_number
         )
 
-        action_t = self.policy.select_action(self.state, bitrate_ladder)
+        if action is not None:
+            action_t = action
+        else:
+            action_t = self.policy.select_action(self.state, bitrate_ladder)
 
         _ladder_entry = bitrate_ladder.get_entry(action_t.bitrate_index)
 
@@ -241,8 +244,10 @@ class ABRSimulator:
             segments_remaining=remaining_segments,
             sim_time_s=current_state.sim_time_s + info_t["total_time_used_s"],
             buffer_s=info_t["buffer_s_next"],
-            last_action=action_t,
             done=done,
+            # -- Previous States
+            last_action=action_t,
+            last_throughputs_kbps=info_t["throughput_kbps"],
         )
 
         return next_state
