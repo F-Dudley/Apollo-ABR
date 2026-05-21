@@ -2,7 +2,13 @@ from typing import Any
 
 from .Core.BufferManager import BufferManager
 
-from .Core.Types import Action, SimulatorState, ScenarioConfig, Transition
+from .Core.Types import (
+    Action,
+    SimulatorState,
+    ScenarioConfig,
+    Transition,
+    BitrateLadder,
+)
 from .Core.Interfaces import (
     ABRPolicy,
     SegmentCatalog,
@@ -100,12 +106,14 @@ class ABRSimulator:
 
         _ladder_entry = bitrate_ladder.get_entry(action_t.bitrate_index)
 
-        segment_info = self.catalog.lookup(
+        bitrate_ladder: BitrateLadder = self.catalog.get_ladder(
             self.config.video_name,
             self.config.codec,
             self.state.segment_number,
             _ladder_entry,
         )
+
+        segment_info = bitrate_ladder.get_entry(action_t.bitrate_index)
 
         #
         # Download / Through-put Calculations

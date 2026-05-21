@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 
+from ..Core.Types import BitrateLadderEntry
 from ..Core.Interfaces import TraceProvider
 
 # Provider Expects CSV Files with the following columns:
@@ -24,8 +25,10 @@ class StandardTraceProvider(TraceProvider):
         self.has_rspi = "RSPI_dbm" in self.trace_df.columns
 
     def download(
-        self, start_time_s: float, wait_time_s: float, segment_size_bytes: float
+        self, start_time_s: float, wait_time_s: float, segment_info: BitrateLadderEntry
     ) -> tuple[float, list[float], list[float]]:
+
+        segment_size_bytes = segment_info["segment_size_bytes"]
 
         download_time_s = 0.0
         throughputs_kbps = []
