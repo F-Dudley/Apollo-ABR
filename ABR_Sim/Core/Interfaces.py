@@ -10,19 +10,17 @@ from .Types import (
 
 
 class SegmentCatalog(Protocol):
+    def __init__(self, catalog_path: str): ...
+
     def num_segments(self, video_name: str, codec: str) -> int: ...
 
     def get_ladder(
         self, video_name: str, codec: str, segment_number: int
     ) -> BitrateLadder: ...
 
-    def lookup(
-        self,
-        video_name: str,
-        codec: str,
-        segment_number: int,
-        ladder_entry: BitrateLadderEntry,
-    ) -> BitrateLadder: ...
+    def get_video_amount(self) -> list[Any]: ...
+
+    def get_codec_amount(self) -> list[Any]: ...
 
 
 class TraceProvider(Protocol):
@@ -40,6 +38,9 @@ class TraceProvider(Protocol):
 
 
 class ABRPolicy(Protocol):
+    def __init__(self, seed: int | None = None):
+        self.seed = seed
+
     def select_action(
         self, state_t: SimulatorState, ladder: BitrateLadder
     ) -> Action: ...
@@ -48,6 +49,8 @@ class ABRPolicy(Protocol):
 class TransitionInfoProvider(Protocol):
 
     name: str
+
+    def __init__(self, seed: int | None = None): ...
 
     def compute(
         self,

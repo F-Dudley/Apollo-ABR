@@ -6,6 +6,8 @@ import numpy as np
 
 class ThroughputPolicy(ABRPolicy):
 
+    name = "Throughput"
+
     def __init__(self):
         super().__init__()
 

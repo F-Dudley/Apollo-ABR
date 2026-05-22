@@ -6,8 +6,10 @@ from random import Random
 
 class RandomWalkPolicy(ABRPolicy):
 
+    name = "RandomWalk"
+
     def __init__(self, seed: int = None, max_step_size: int = 1):
-        super().__init__()
+        super().__init__(seed)
 
         self.rng = Random(seed)
         self.max_step_size = max_step_size

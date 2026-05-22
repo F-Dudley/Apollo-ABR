@@ -4,7 +4,11 @@ from ..Core.Types import Action, BitrateLadderEntry
 
 
 class RandomPolicy(ABRPolicy):
+
+    name = "Random"
+
     def __init__(self, seed: int = None):
+        super().__init__(seed=seed)
         self.random = Random(seed)
 
     def select_action(self, state_t, ladder) -> Action:

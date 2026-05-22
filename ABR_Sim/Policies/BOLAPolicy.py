@@ -4,6 +4,8 @@ from ..Core.Types import Action, BitrateLadderEntry
 
 class BOLAPolicy(ABRPolicy):
 
+    name = "BOLA"
+
     def __init__(self):
         super().__init__()
 
