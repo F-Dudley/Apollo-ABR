@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, TypedDict
+from collections import deque
 
 type NICType = Literal["Eth", "WiFi", "LTE", "5G"]
 
@@ -34,8 +35,8 @@ class SimulatorState:
     sim_time_s: float
     buffer_s: float
 
-    last_action: Action
-    last_throughputs_kbps: list[float]
+    last_actions: deque[Action]
+    last_throughputs_kbps: deque[float]
 
     done: bool = False
 

@@ -16,6 +16,8 @@ from .Core.Interfaces import (
     TransitionInfoProvider,
 )
 
+from collections import deque
+
 
 class ABRSimulator:
     def __init__(
@@ -49,16 +51,8 @@ class ABRSimulator:
             segment_number=0,
             sim_time_s=0.0,
             buffer_s=self.config.initial_buffer_s,
-            buffer_kb=0,
-            last_bitrate_index=self.config.initial_bitrate_index,
-            throughput_mbps=self.config.initial_throughput_mbps,
-            last_action=Action(
-                bitrate=self.config.initial_bitrate_index,
-                vmaf=0.0,
-                segment_size_bytes=0,
-                resolution_width=0,
-                resolution_height=0,
-            ),
+            last_actions=deque(maxlen=5),
+            last_throughputs_kbps=deque(maxlen=5),
             done=False,
         )
 
@@ -237,6 +231,12 @@ class ABRSimulator:
             else 0
         )
 
+        next_actions = current_state.last_actions.copy()
+        next_actions.append(action_t)
+
+        next_throughputs = current_state.last_throughputs_kbps.copy()
+        next_throughputs.extend(info_t["throughput_kbps"])
+
         next_state = SimulatorState(
             scenario_id=current_state.scenario_id,
             step_t=current_state.step_t + 1,
@@ -246,8 +246,8 @@ class ABRSimulator:
             buffer_s=info_t["buffer_s_next"],
             done=done,
             # -- Previous States
-            last_action=action_t,
-            last_throughputs_kbps=info_t["throughput_kbps"],
+            last_actions=next_actions,
+            last_throughputs_kbps=next_throughputs,
         )
 
         return next_state
