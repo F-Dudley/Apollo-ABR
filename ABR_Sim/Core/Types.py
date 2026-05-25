@@ -75,7 +75,6 @@ class BitrateLadderEntry(TypedDict):
 
 
 class BitrateLadder(TypedDict):
-    segment_number: int
     entries: list[BitrateLadderEntry]
 
     def __len__(self) -> int:

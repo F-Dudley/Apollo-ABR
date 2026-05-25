@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+from typing import TypedDict, Any, Generator
 from itertools import product
 from uuid import uuid4
 
@@ -20,6 +21,22 @@ def collect_trace_files(trace_directory: str, nic_type: str) -> list[str]:
     path_dir = Path(nic_directory)
     for trace_file in path_dir.glob("*.csv"):
         trace_files.append(trace_file.resolve().as_posix())
+
+
+def generate_id(*args, digest_size: int = 32) -> str:
+    hasher = blake2b(digest_size=digest_size)
+    id_str = "::".join(str(arg) for arg in args)
+    hasher.update(id_str.encode("utf-8"))
+    return hasher.hexdigest()
+
+
+class ManifestEntry(TypedDict):
+    scenario_id: str
+    video_name: str
+    codec: str
+    network: str
+    policy: str
+    trace_file: str
 
 
 class Manifest:
@@ -60,7 +77,9 @@ class Manifest:
             permutations.extend(
                 [
                     {
-                        "scenario_id": uuid4(),
+                        "scenario_id": generate_id(
+                            video, codec, network, policy, trace_file
+                        ),
                         "video_name": video,
                         "codec": codec,
                         "network": network,
@@ -99,6 +118,6 @@ class Manifest:
             f"Manifest loaded successfully with {len(self._manifest)} entries and {permutation_amount} unique permutations based on columns: {', '.join(self.permutation_columns)}."
         )
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[ManifestEntry, None, None]:
         for _, row in self._manifest.iterrows():
-            yield row.to_tuple()
+            yield row.to_dict()

@@ -1,9 +1,10 @@
 import os
 import argparse
 from pathlib import Path
+from typing import Any
 
 from .Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
-from .Core.Manifest import Manifest
+from .Core.Manifest import Manifest, ManifestEntry
 from .Core.Types import ScenarioConfig
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -43,8 +44,9 @@ def collect_trace_files(trace_directory: str, nic_type: str) -> list[str]:
         trace_files.append(trace_file.resolve().as_posix())
 
 
-def run_simulation(permutation: list, segment_catalog: SegmentCatalog):
-    pass
+def run_simulation(permutation: ManifestEntry):
+
+    global segment_catalog
 
 
 if __name__ == "__main__":
@@ -70,8 +72,7 @@ if __name__ == "__main__":
         future = [
             executor.submit(
                 run_simulation,
-                row,
-                segment_catalog,
+                permutation,
             )
-            for _, row in manifest
+            for permutation in manifest
         ]

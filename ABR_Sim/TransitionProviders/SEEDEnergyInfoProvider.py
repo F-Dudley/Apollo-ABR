@@ -35,6 +35,11 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
 
         download_time_s = info_t.get("download_time_s", 0.0)
 
+        if not config.nic == "Eth":
+            assert (
+                "signal_strength_dbm" in info_t
+            ), "Throughput and Signal Strength traces are required for energy estimation."
+
         throughputs_kbps = info_t.get("throughput_kbps", [])
 
         signal_strength_dbm = info_t.get("signal_strength_dbm", [])
