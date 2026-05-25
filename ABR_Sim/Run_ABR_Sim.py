@@ -1,9 +1,12 @@
 import os
 import argparse
+from pathlib import Path
 
 from .Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
 from .Core.Manifest import Manifest
 from .Core.Types import ScenarioConfig
+
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 def parse_args():
@@ -26,31 +29,49 @@ def parse_args():
     return parser.parse_args()
 
 
+def collect_trace_files(trace_directory: str, nic_type: str) -> list[str]:
+    # Defined as Root -> NetworkType -> TraceFiles
+    trace_files = []
+
+    nic_directory = os.path.join(os.path.abspath(trace_directory), nic_type.lower())
+
+    if not os.path.exists(nic_directory):
+        raise FileNotFoundError(f"NIC directory '{nic_directory}' does not exist.")
+
+    path_dir = Path(nic_directory)
+    for trace_file in path_dir.glob("*.csv"):
+        trace_files.append(trace_file.resolve().as_posix())
+
+
+def run_simulation(permutation: list, segment_catalog: SegmentCatalog):
+    pass
+
+
 if __name__ == "__main__":
 
     args = parse_args()
 
-    # Load the segment catalog
-    segment_catalog = SegmentCatalog(args.segment_catalog)
+    _segment_catalog = SegmentCatalog(args.segment_catalog)
+
+    videos = _segment_catalog.get_video_list()
+    codecs = _segment_catalog.get_codec_list()
 
     # Load the manifest
-    manifest = Manifest(segment_catalog)
+    manifest = Manifest(videos, codecs, trace_directory=args.trace_directory)
 
-    # Create the scenario configuration
-    config = ScenarioConfig(
-        scenario_id="example_scenario",
-        video_name=manifest.get_video_amount()[0],
-        codec=manifest.get_codec_amount()[0],
-        nic="WiFi",
-        trace_id="example_trace",
-    )
+    def init_worker():
+        global segment_catalog
+        segment_catalog = _segment_catalog
 
-    # Initialize the ABR policy (replace with actual implementation)
-    policy = ABRPolicy(seed=42)
+    with ProcessPoolExecutor(
+        max_workers=os.cpu_count() - 1 or 1, initializer=init_worker
+    ) as executor:
 
-    # Initialize transition info providers (replace with actual implementations)
-    transition_info_providers: list[TransitionInfoProvider] = []
-
-    # Create and run the simulator (replace with actual implementation)
-    # simulator = ABRSimulator(config, segment_catalog, trace_provider, policy, buffer_manager, transition_info_providers)
-    # simulator.run()
+        future = [
+            executor.submit(
+                run_simulation,
+                row,
+                segment_catalog,
+            )
+            for _, row in manifest
+        ]

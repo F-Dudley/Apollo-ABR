@@ -1,6 +1,25 @@
+import os
 import pandas as pd
 from itertools import product
 from uuid import uuid4
+
+from pathlib import Path
+
+from hashlib import blake2b
+
+
+def collect_trace_files(trace_directory: str, nic_type: str) -> list[str]:
+    # Defined as Root -> NetworkType -> TraceFiles
+    trace_files = []
+
+    nic_directory = os.path.join(os.path.abspath(trace_directory), nic_type.lower())
+
+    if not os.path.exists(nic_directory):
+        raise FileNotFoundError(f"NIC directory '{nic_directory}' does not exist.")
+
+    path_dir = Path(nic_directory)
+    for trace_file in path_dir.glob("*.csv"):
+        trace_files.append(trace_file.resolve().as_posix())
 
 
 class Manifest:
@@ -11,31 +30,51 @@ class Manifest:
         codecs: list[str],
         networks: list[str] = ["Eth", "LTE"],
         policies: list[str] = ["Random", "RandomWalk", "Throughput", "BOLA", "WISH"],
+        permutation_columns: list[str] = ["video_name", "codec", "network", "policy"],
+        trace_directory: str = "./traces",
+        fresh_manifest: bool = False,
     ):
         self.videos = videos
         self.codecs = codecs
         self.networks = networks
         self.policies = policies
+        self.permutation_columns = permutation_columns
+        self.trace_directory = trace_directory
 
-        self._construct_manifest()
+        self._construct_manifest(fresh_manifest=fresh_manifest)
         self._validate_manifest()
 
-    def _construct_manifest(self):
-        permutations = [
-            {
-                "scenario_id": uuid4(),
-                "video_name": video,
-                "codec": codec,
-                "network": network,
-                "policy": policy,
-            }
-            for video, codec, network, policy in product(
-                self.videos, self.codecs, self.networks, self.policies
-            )
-        ]
+    def _construct_manifest(self, fresh_manifest: bool = False):
 
-        # Convert the list of permutations into a DataFrame
+        if not fresh_manifest and os.path.exists("simulation_manifest.csv"):
+            print("Loading existing manifest from 'simulation_manifest.csv'...")
+            self._manifest = pd.read_csv("simulation_manifest.csv")
+            return
+
+        permutations = []
+
+        for network in self.networks:
+
+            trace_files = collect_trace_files(self.trace_directory, network)
+
+            permutations.extend(
+                [
+                    {
+                        "scenario_id": uuid4(),
+                        "video_name": video,
+                        "codec": codec,
+                        "network": network,
+                        "policy": policy,
+                        "trace_file": trace_file,
+                    }
+                    for video, codec, policy, trace_file in product(
+                        self.videos, self.codecs, self.policies, trace_files
+                    )
+                ]
+            )
+
         self._manifest = pd.DataFrame(permutations)
+        self._manifest.to_csv("simulation_manifest.csv", index=False)
 
     def _validate_manifest(self):
 
@@ -62,5 +101,4 @@ class Manifest:
 
     def __iter__(self):
         for _, row in self._manifest.iterrows():
-            scenario_config = {col: row[col] for col in self.permutation_columns}
-            yield scenario_config,
+            yield row.to_tuple()
