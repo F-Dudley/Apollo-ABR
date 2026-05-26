@@ -35,14 +35,7 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
 
         download_time_s = info_t.get("download_time_s", 0.0)
 
-        if not config.nic == "Eth":
-            assert (
-                "signal_strength_dbm" in info_t
-            ), "Throughput and Signal Strength traces are required for energy estimation."
-
         throughputs_kbps = info_t.get("throughput_kbps", [])
-
-        signal_strength_dbm = info_t.get("signal_strength_dbm", [])
 
         used_energy_encstore_j = segment.get("used_energy_encstore", 0.0)
         used_energy_decoding_j = segment.get("used_energy_decoding", 0.0)
@@ -62,11 +55,6 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
 
             case "LTE" | "5G":
 
-                avg_signal_strength_dbm = (
-                    np.mean(signal_strength_dbm)
-                    if len(signal_strength_dbm) > 0
-                    else self.default_signal_strength_dbm
-                )
                 avg_throughput_kbps = (
                     np.mean(throughputs_kbps)
                     if len(throughputs_kbps) > 0
@@ -75,8 +63,7 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
                 avg_throughput_mbps = avg_throughput_kbps / 1000.0
 
                 used_energy_ret_j = self._energy_estimate_lte(
-                    signal_strength_dbm=avg_signal_strength_dbm,
-                    downlink_throughput=avg_throughput_mbps,
+                    downlink_throughputs=throughputs_kbps,
                     download_period=download_time_s,
                 )
 
@@ -102,14 +89,15 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
 
     def _energy_estimate_lte(
         self,
-        signal_strength_dbm: float,
-        downlink_throughput: float,
+        downlink_throughputs: list[float],
         download_period: float,
     ) -> float:
 
-        p_rx_rf = (1889.0 - 1.11 * signal_strength_dbm) / 1000
-        p_rx_bb = (1923.0 + 2.89 * downlink_throughput) / 1000
+        tp_arr = np.asarray(downlink_throughputs, dtype=float)
 
-        second_estimate = self.lte_p_conn_w + self.lte_p_rb_w + p_rx_rf + p_rx_bb
+        p_rx_rf = (1889.0 - 1.11 * self.default_signal_strength_dbm) / 1000.0
+        p_rx_bb = (1923.0 + 2.89 * tp_arr) / 1000.0
 
-        return second_estimate * download_period
+        power_w = self.lte_p_conn_w + self.lte_p_rb_w + p_rx_rf + p_rx_bb
+
+        return float(np.mean(power_w) * download_period)
