@@ -1,11 +1,11 @@
 from random import Random
+from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
 from ..Core.Types import Action, BitrateLadderEntry
 
 
+@ABRPolicyClass(name="Random")
 class RandomPolicy(ABRPolicy):
-
-    name = "Random"
 
     def __init__(self, seed: int = None):
         super().__init__(seed=seed)

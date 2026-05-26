@@ -1,10 +1,10 @@
+from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
 from ..Core.Types import Action, BitrateLadderEntry
 
 
+@ABRPolicyClass(name="BOLA")
 class BOLAPolicy(ABRPolicy):
-
-    name = "BOLA"
 
     def __init__(self):
         super().__init__()

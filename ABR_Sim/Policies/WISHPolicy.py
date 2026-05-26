@@ -1,3 +1,5 @@
+from . import ABRPolicyClass
+
 from ..Core.Interfaces import ABRPolicy
 from ..Core.Types import Action, BitrateLadder, BitrateLadderEntry
 
@@ -5,10 +7,8 @@ from ..Core.Types import Action, BitrateLadder, BitrateLadderEntry
 import numpy as np
 
 
+@ABRPolicyClass(name="WISH")
 class WISHPolicy(ABRPolicy):
-
-    name = "WISH"
-
     def __init__(self):
         super().__init__()
 

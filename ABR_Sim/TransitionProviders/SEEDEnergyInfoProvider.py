@@ -49,11 +49,12 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
         used_energy_display_j = segment.get("used_energy_display", 0.0)
 
         used_energy_ret_j = 0.0
+        idle_energy_j = 0.0
 
         match config.nic:
 
             case "Eth":
-                used_energy_ret_j = self._energy_estimate_eth(
+                idle_energy_j, used_energy_ret_j = self._energy_estimate_eth(
                     download_period=download_time_s,
                     wait_time_s=info_t.get("wait_time_s", 0.0),
                     throughputs_kbps=throughputs_kbps,
@@ -84,6 +85,7 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
             "used_energy_encstore": used_energy_encstore_j,
             "used_energy_decoding": used_energy_decoding_j,
             "used_energy_display": used_energy_display_j,
+            "idle_energy": idle_energy_j,
         }
 
     def _energy_estimate_eth(
@@ -96,7 +98,7 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
         idle_power_j = self.ethernet_idle_w * wait_time_s
         active_power_j = self.ethernet_active_w * download_period
 
-        return idle_power_j + active_power_j
+        return idle_power_j, active_power_j
 
     def _energy_estimate_lte(
         self,

@@ -23,7 +23,7 @@ def collect_trace_files(trace_directory: str, nic_type: str) -> list[str]:
         trace_files.append(trace_file.resolve().as_posix())
 
 
-def generate_id(*args, digest_size: int = 32) -> str:
+def generate_id(*args, digest_size: int = 64) -> str:
     hasher = blake2b(digest_size=digest_size)
     id_str = "::".join(str(arg) for arg in args)
     hasher.update(id_str.encode("utf-8"))

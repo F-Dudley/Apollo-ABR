@@ -18,7 +18,7 @@ class TransitionCollector:
         if not self.simulator.initialized:
             self.simulator.init()
 
-    def run(self) -> list[Transition]:
+    def run(self) -> tuple[list[Transition], list[str]]:
         self.simulator.reset()
 
         transitions: list[Transition] = []
@@ -42,4 +42,9 @@ class TransitionCollector:
             if transition.done:
                 break
 
-        return transitions
+        try:
+            transition_columns = list(transitions[0].__dict__.keys())
+        except Exception:
+            transition_columns = list(Transition.__dict__.keys())
+
+        return transitions, transition_columns

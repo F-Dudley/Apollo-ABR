@@ -1,9 +1,11 @@
+from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
 from ..Core.Types import Action
 
 import numpy as np
 
 
+@ABRPolicyClass(name="Throughput")
 class ThroughputPolicy(ABRPolicy):
 
     name = "Throughput"

@@ -1,12 +1,12 @@
+from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
 from ..Core.Types import Action
 
 from random import Random
 
 
+@ABRPolicyClass(name="RandomWalk")
 class RandomWalkPolicy(ABRPolicy):
-
-    name = "RandomWalk"
 
     def __init__(self, seed: int = None, max_step_size: int = 1):
         super().__init__(seed)
