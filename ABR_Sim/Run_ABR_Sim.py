@@ -70,6 +70,18 @@ def parse_args():
         default=0.0,
         help="Initial buffer size in seconds.",
     )
+    parser.add_argument(
+        "--network-types",
+        type=str,
+        nargs="+",
+        default=["Eth", "LTE"],
+        help="List of network types to include in the simulations (e.g., Eth, LTE).",
+    )
+    parser.add_argument(
+        "--fresh-manifest",
+        action="store_true",
+        help="Whether to generate a fresh manifest instead of loading an existing one.",
+    )
     return parser.parse_args()
 
 
@@ -207,8 +219,10 @@ if __name__ == "__main__":
     manifest = Manifest(
         videos,
         codecs,
+        networks=args.network_types,
         policies=PolicyRegistry.available_policies(),
         trace_directory=args.trace_directory,
+        fresh_manifest=args.fresh_manifest,
     )
 
     sim_config = SimConfig(
