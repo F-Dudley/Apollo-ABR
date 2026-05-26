@@ -2,13 +2,21 @@ from typing import Any
 
 from .Core.BufferManager import BufferManager
 
-from .Core.Types import Action, SimulatorState, ScenarioConfig, Transition
+from .Core.Types import (
+    Action,
+    SimulatorState,
+    ScenarioConfig,
+    Transition,
+    BitrateLadder,
+)
 from .Core.Interfaces import (
     ABRPolicy,
     SegmentCatalog,
     TraceProvider,
     TransitionInfoProvider,
 )
+
+from collections import deque
 
 
 class ABRSimulator:
@@ -37,15 +45,14 @@ class ABRSimulator:
         )
 
         self.state = SimulatorState(
+            config=self.config,
             scenario_id=self.config.scenario_id,
             step_t=0,
             segment_number=0,
             sim_time_s=0.0,
             buffer_s=self.config.initial_buffer_s,
-            buffer_kb=0,
-            last_bitrate_index=self.config.initial_bitrate_index,
-            throughput_mbps=self.config.initial_throughput_mbps,
-            last_action=Action(bitrate=self.config.initial_bitrate_index, vmaf=0.0),
+            last_actions=deque(maxlen=5),
+            last_throughputs_kbps=deque(maxlen=5),
             done=False,
         )
 
@@ -89,16 +96,21 @@ class ABRSimulator:
             self.config.video_name, self.config.codec, self.state.segment_number
         )
 
-        action_t = self.policy.select_action(self.state, bitrate_ladder)
+        if action is not None:
+            action_t = action
+        else:
+            action_t = self.policy.select_action(self.state, bitrate_ladder)
 
         _ladder_entry = bitrate_ladder.get_entry(action_t.bitrate_index)
 
-        segment_info = self.catalog.lookup(
+        bitrate_ladder: BitrateLadder = self.catalog.get_ladder(
             self.config.video_name,
             self.config.codec,
             self.state.segment_number,
             _ladder_entry,
         )
+
+        segment_info = bitrate_ladder.get_entry(action_t.bitrate_index)
 
         #
         # Download / Through-put Calculations
@@ -108,9 +120,12 @@ class ABRSimulator:
             buffer_s=self.state.buffer_s, sim_time_s=self.state.sim_time_s
         )
 
-        download_time_s, throughput_traces_kbps = self.trace_provider.download(
-            start_time_s=self.pre_buffer_info.download_start_time_s,
-            size_bits=encoded_segment_size_bytes,
+        download_time_s, throughput_traces_kbps, signal_strength_dbm = (
+            self.trace_provider.download(
+                start_time_s=self.pre_buffer_info.download_start_time_s,
+                wait_time_s=pre_buffer_info.wait_time_s,
+                segment_size_bytes=encoded_segment_size_bytes,
+            )
         )
 
         post_buffer_info = self.buffer_manager.complete_download(
@@ -127,6 +142,7 @@ class ABRSimulator:
             # Network Info
             "download_time_s": download_time_s,
             "throughput_kbps": throughput_traces_kbps,
+            "signal_strength_dbm": signal_strength_dbm,
             # Buffer Info
             "wait_time_s": pre_buffer_info.wait_time_s,
             "rebuffer_time_s": post_buffer_info.rebuffer_time_s,
@@ -215,6 +231,12 @@ class ABRSimulator:
             else 0
         )
 
+        next_actions = current_state.last_actions.copy()
+        next_actions.append(action_t)
+
+        next_throughputs = current_state.last_throughputs_kbps.copy()
+        next_throughputs.extend(info_t["throughput_kbps"])
+
         next_state = SimulatorState(
             scenario_id=current_state.scenario_id,
             step_t=current_state.step_t + 1,
@@ -222,8 +244,10 @@ class ABRSimulator:
             segments_remaining=remaining_segments,
             sim_time_s=current_state.sim_time_s + info_t["total_time_used_s"],
             buffer_s=info_t["buffer_s_next"],
-            last_action=action_t,
             done=done,
+            # -- Previous States
+            last_actions=next_actions,
+            last_throughputs_kbps=next_throughputs,
         )
 
         return next_state
