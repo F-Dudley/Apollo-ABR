@@ -120,12 +120,10 @@ class ABRSimulator:
             buffer_s=self.state.buffer_s, sim_time_s=self.state.sim_time_s
         )
 
-        download_time_s, throughput_traces_kbps, signal_strength_dbm = (
-            self.trace_provider.download(
-                start_time_s=self.pre_buffer_info.download_start_time_s,
-                wait_time_s=pre_buffer_info.wait_time_s,
-                segment_size_bytes=encoded_segment_size_bytes,
-            )
+        download_time_s, throughput_traces_kbps = self.trace_provider.download(
+            start_time_s=self.pre_buffer_info.download_start_time_s,
+            wait_time_s=pre_buffer_info.wait_time_s,
+            segment_size_bytes=encoded_segment_size_bytes,
         )
 
         post_buffer_info = self.buffer_manager.complete_download(
@@ -142,7 +140,6 @@ class ABRSimulator:
             # Network Info
             "download_time_s": download_time_s,
             "throughput_kbps": throughput_traces_kbps,
-            "signal_strength_dbm": signal_strength_dbm,
             # Buffer Info
             "wait_time_s": pre_buffer_info.wait_time_s,
             "rebuffer_time_s": post_buffer_info.rebuffer_time_s,

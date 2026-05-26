@@ -20,19 +20,14 @@ class StandardTraceProvider(TraceProvider):
         self.trace_df = pd.read_csv(trace_file_path)
         self.current_idx = 0
 
-        self.has_signal_strength = "signal_strength_dbm" in self.trace_df.columns
-        self.has_rsrp = "RSRP_dbm" in self.trace_df.columns
-        self.has_rspi = "RSPI_dbm" in self.trace_df.columns
-
     def download(
         self, start_time_s: float, wait_time_s: float, segment_info: BitrateLadderEntry
-    ) -> tuple[float, list[float], list[float]]:
+    ) -> tuple[float, list[float]]:
 
         segment_size_bytes = segment_info["segment_size_bytes"]
 
         download_time_s = 0.0
         throughputs_kbps = []
-        signal_strength_dbm = []
 
         # Assuming 1 sample per second in the trace
         self.current_idx += int(wait_time_s)
@@ -45,16 +40,6 @@ class StandardTraceProvider(TraceProvider):
             throughput = row["throughput_bytes"]
             throughputs_kbps.append(throughput / 1000.0)  # Convert to kbps
 
-            if self.has_signal_strength:
-                signal_strength = row["signal_strength_dbm"]
-            elif self.has_rsrp:
-                signal_strength = row["RSRP_dbm"]
-            elif self.has_rspi:
-                signal_strength = row["RSPI_dbm"]
-            else:
-                signal_strength = 0.0
-                signal_strength_dbm.append(signal_strength)
-
             segment_size_bytes -= throughput
             download_time_s += 1.0
 
@@ -64,4 +49,4 @@ class StandardTraceProvider(TraceProvider):
             else:
                 self.current_idx %= len(self.trace_df)
 
-        return download_time_s, throughputs_kbps, signal_strength_dbm
+        return download_time_s, throughputs_kbps
