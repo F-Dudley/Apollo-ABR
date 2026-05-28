@@ -36,7 +36,7 @@ class SimulatorState:
     buffer_s: float
 
     last_actions: deque[Action]
-    last_throughputs_kbps: deque[float]
+    last_throughputs_bytes_per_s: deque[float]
 
     done: bool = False
 
@@ -57,8 +57,8 @@ class Transition:
     scenario_id: str
     step_t: int
 
-    state_t: SimulatorState
-    action_t: Action
+    state_t: dict[str, Any]
+    action_t: dict[str, Any]
 
     info_t: dict[str, Any]
 

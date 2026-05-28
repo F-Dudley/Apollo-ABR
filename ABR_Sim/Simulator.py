@@ -17,6 +17,8 @@ from .Core.Interfaces import (
 )
 
 from collections import deque
+import dataclasses
+import numpy as np
 
 
 class ABRSimulator:
@@ -114,25 +116,23 @@ class ABRSimulator:
 
         #
         # Download / Through-put Calculations
-        encoded_segment_size_bytes = segment_info["encoded_segment_size"]
+        encoded_segment_size_bytes = segment_info["encoded_segment_size_bytes"]
 
         pre_buffer_info = self.buffer_manager.prepare_download(
             buffer_s=self.state.buffer_s, sim_time_s=self.state.sim_time_s
         )
 
-        download_time_s, throughput_traces_kbps, signal_strength_dbm = (
-            self.trace_provider.download(
-                start_time_s=self.pre_buffer_info.download_start_time_s,
-                wait_time_s=pre_buffer_info.wait_time_s,
-                segment_size_bytes=encoded_segment_size_bytes,
-            )
+        download_time_s, throughput_traces_bytes_per_s = self.trace_provider.download(
+            start_time_s=pre_buffer_info.download_start_time_s,
+            wait_time_s=pre_buffer_info.wait_time_s,
+            segment_size_bytes=encoded_segment_size_bytes,
         )
 
         post_buffer_info = self.buffer_manager.complete_download(
             buffer_s_before_download=pre_buffer_info.buffer_s_before_download,
             download_start_time_s=pre_buffer_info.download_start_time_s,
             download_time_s=download_time_s,
-            decoding_time_s=segment_info.get("decoding_time_s", 0.0),
+            decoding_time_s=segment_info.get("decoding_duration_s", 0.0),
         )
 
         info_t = {
@@ -141,8 +141,7 @@ class ABRSimulator:
             "segment_number": self.state.segment_number,
             # Network Info
             "download_time_s": download_time_s,
-            "throughput_kbps": throughput_traces_kbps,
-            "signal_strength_dbm": signal_strength_dbm,
+            "throughput_bytes_per_s": throughput_traces_bytes_per_s,
             # Buffer Info
             "wait_time_s": pre_buffer_info.wait_time_s,
             "rebuffer_time_s": post_buffer_info.rebuffer_time_s,
@@ -154,11 +153,14 @@ class ABRSimulator:
         next_segment_number = self.state.segment_number + 1
         done = next_segment_number >= self.total_segments
 
+        state_dict = self._get_state_dict(self.state)
+        action_dict = self._build_action_dict(action_t)
+
         transition = Transition(
             scenario_id=self.state.scenario_id,
             step_t=self.state.step_t,
-            state_t=self.state,
-            action_t=action_t,
+            state_t=state_dict,
+            action_t=action_dict,
             info_t=info_t,
             done=done,
         )
@@ -197,24 +199,15 @@ class ABRSimulator:
         if state is None:
             raise RuntimeError("Simulator not initialized. State is None.")
 
-        return {x: getattr(state, x) for x in state.__dataclass_fields__.keys()}
+        state_dict = dataclasses.asdict(state)
 
-    def _build_action_dict(
-        self, action: Action, segment: dict[str, Any]
-    ) -> dict[str, Any]:
-        action_dict = {
-            x: getattr(action, x) for x in action.__dataclass_fields__.keys()
-        }
+        del state_dict["last_actions"]
+        del state_dict["last_throughputs_bytes_per_s"]
 
-        # Add Segment Info to Action Dict
-        action_dict.update(
-            {
-                "codec": self.config.codec,
-                "encoded_segment_size": segment["encoded_segment_size"],
-            }
-        )
+        return state_dict
 
-        return action_dict
+    def _build_action_dict(self, action: Action) -> dict[str, Any]:
+        return dataclasses.asdict(action)
 
     def _build_next_state(
         self,
@@ -234,8 +227,8 @@ class ABRSimulator:
         next_actions = current_state.last_actions.copy()
         next_actions.append(action_t)
 
-        next_throughputs = current_state.last_throughputs_kbps.copy()
-        next_throughputs.extend(info_t["throughput_kbps"])
+        next_throughputs = current_state.last_throughputs_bytes_per_s.copy()
+        next_throughputs.extend(info_t["throughput_bytes_per_s"])
 
         next_state = SimulatorState(
             scenario_id=current_state.scenario_id,
@@ -247,7 +240,7 @@ class ABRSimulator:
             done=done,
             # -- Previous States
             last_actions=next_actions,
-            last_throughputs_kbps=next_throughputs,
+            last_throughputs_bytes_per_s=next_throughputs,
         )
 
         return next_state
