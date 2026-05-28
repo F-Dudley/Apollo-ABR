@@ -1,14 +1,16 @@
 import os
 import argparse
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from typing import Any
 from tqdm.auto import tqdm
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, asdict, is_dataclass
 
 from .Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
 from .Core.Manifest import Manifest, ManifestEntry
-from .Core.Types import ScenarioConfig
+from .Core.Types import ScenarioConfig, Transition
 from .Core.BufferManager import BufferManager
 
 from .Policies import PolicyRegistry
@@ -82,6 +84,12 @@ def parse_args():
         action="store_true",
         help="Whether to generate a fresh manifest instead of loading an existing one.",
     )
+    parser.add_argument(
+        "--max-scenarios",
+        type=int,
+        default=None,
+        help="Maximum number of scenarios to run.",
+    )
     return parser.parse_args()
 
 
@@ -115,6 +123,108 @@ class SimConfig:
 def init_worker(segment_catalog_path: str):
     global segment_catalog
     segment_catalog = SegmentCatalog(segment_catalog_path)
+
+
+def flatten_value(value: Any, prefix: str) -> dict[str, Any]:
+    if is_dataclass(value):
+        value = asdict(value)
+
+    if isinstance(value, dict):
+        flat = {}
+        for sub_key, sub_value in value.items():
+            if prefix:
+                new_prefix = f"{prefix}_{sub_key}"
+            else:
+                new_prefix = str(sub_key)
+
+            flat.update(flatten_value(sub_value, new_prefix))
+
+        return flat
+
+    elif isinstance(value, (list, tuple, deque, np.ndarray)):
+        value = np.array(value)
+
+        return {
+            f"{prefix}_len": len(value),
+            f"{prefix}_min": np.min(value) if value.size else None,
+            f"{prefix}_max": np.max(value) if value.size else None,
+            f"{prefix}_mean": np.mean(value) if value.size else None,
+            f"{prefix}_delta": (value[-1] - value[0]) if value.size > 1 else None,
+        }
+
+    else:
+        return {prefix: value}
+
+
+def flatten_dataclass(instance) -> dict[str, Any]:
+    if not is_dataclass(instance):
+        raise ValueError("Provided instance is not a dataclass.")
+
+    flattened = {}
+
+    # Flatten Nested Values (dataclasses, lists, dicts)
+    for key, value in asdict(instance).items():
+        flattened.update(flatten_value(value, key))
+
+    return flattened
+
+
+def flatten_transitions(transitions: list[Transition]) -> list[dict[str, Any]]:
+    return [flatten_dataclass(transition) for transition in transitions]
+
+
+def validate_transition_table(df: pd.DataFrame, config: ScenarioConfig) -> None:
+    if df.empty:
+        raise ValueError(f"Scenario {config.scenario_id} produced no transitions.")
+
+    required = [
+        "scenario_id",
+        "step_t",
+        "segment_number",
+        "download_time_s",
+        "buffer_s",
+        "buffer_s_next",
+        "throughput_bytes_per_s",
+        "used_energy_ret",
+    ]
+
+    missing = [col for col in required if col not in df.columns]
+
+    if missing:
+        raise ValueError(f"Missing transition columns: {missing}")
+
+    if not df["step_t"].is_monotonic_increasing:
+        raise ValueError("step_t is not monotonic increasing.")
+
+    non_negative = [
+        "download_time_s",
+        "buffer_s",
+        "buffer_s_next",
+        "rebuffer_time_s",
+        "wait_time_s",
+        "throughput_bytes_per_s",
+        "used_energy_ret",
+        "used_energy_encstore",
+        "used_energy_decoding",
+        "used_energy_display",
+    ]
+
+    for col in non_negative:
+        if col in df.columns:
+            values = pd.to_numeric(df[col], errors="coerce")
+
+            if values.isna().any():
+                raise ValueError(f"{col} contains NaN values.")
+
+            if not np.isfinite(values).all():
+                raise ValueError(f"{col} contains non-finite values.")
+
+            if (values < 0).any():
+                raise ValueError(f"{col} contains negative values.")
+
+    if "buffer_s_next" in df.columns:
+        if df["buffer_s_next"].max() > config.max_buffer_s + 1e-6:
+            raise ValueError("buffer_s_next exceeds max buffer.")
 
 
 def run_simulation(
@@ -177,10 +287,16 @@ def run_simulation(
             output_directory, f"{scenario_config.scenario_id}.parquet"
         )
 
+        # Flatten Transitions into Dicts
+
+        transitions = flatten_transitions(transitions)
+
         transitions_table = pd.DataFrame(
             transitions,
-            columns=transition_columns,
         )
+
+        validate_transition_table(transitions_table, scenario_config)
+
         transitions_table.to_parquet(output_path, index=False)
 
         return {
@@ -231,6 +347,17 @@ if __name__ == "__main__":
         initial_buffer_s=args.initial_buffer,
     )
 
+    # Scenarios
+
+    scenario_entries = [
+        entry
+        for entry in manifest
+        if validate_manifest_entry(entry, args.output_directory)
+    ]
+
+    if args.max_scenarios is not None and len(scenario_entries) > args.max_scenarios:
+        scenario_entries = scenario_entries[: args.max_scenarios]
+
     with ProcessPoolExecutor(
         max_workers=args.max_workers,
         initializer=init_worker,
@@ -241,8 +368,7 @@ if __name__ == "__main__":
             executor.submit(
                 run_simulation, permutation, args.output_directory, sim_config
             )
-            for permutation in manifest
-            if validate_manifest_entry(permutation, args.output_directory)
+            for permutation in scenario_entries
         ]
 
         results = []

@@ -35,7 +35,7 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
 
         download_time_s = info_t.get("download_time_s", 0.0)
 
-        throughputs_kbps = info_t.get("throughput_kbps", [])
+        throughputs_kbps = np.asarray(info_t.get("throughput_bytes_per_s", [])) / 1000.0
 
         used_energy_encstore_j = segment.get("used_energy_encstore", 0.0)
         used_energy_decoding_j = segment.get("used_energy_decoding", 0.0)
@@ -60,7 +60,6 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
                     if len(throughputs_kbps) > 0
                     else self.default_throughput_kbps
                 )
-                avg_throughput_mbps = avg_throughput_kbps / 1000.0
 
                 used_energy_ret_j = self._energy_estimate_lte(
                     downlink_throughputs=throughputs_kbps,
