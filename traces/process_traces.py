@@ -52,6 +52,8 @@ def process_traces(trace_dir: str, output_dir: str) -> None:
 
         df.drop(columns=["throughput_mbps"], inplace=True)
 
+        df.sort_values(by="timestamp_s", inplace=True)
+
         # Save Processed Trace
         df.to_parquet(output_file_dir / f"{trace_id}.parquet", index=False)
 

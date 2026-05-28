@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 
 from ..Core.Types import BitrateLadderEntry
 from ..Core.Interfaces import TraceProvider
@@ -17,8 +18,19 @@ class StandardTraceProvider(TraceProvider):
         if not os.path.isfile(trace_file_path):
             raise FileNotFoundError(f"Trace file not found: {trace_file_path}")
 
-        self.trace_df = pd.read_csv(trace_file_path)
-        self.current_idx = 0
+        if trace_file_path.endswith(".csv"):
+
+            self.trace_df = pd.read_csv(trace_file_path)
+        elif trace_file_path.endswith(".parquet"):
+            self.trace_df = pd.read_parquet(trace_file_path)
+        else:
+            raise ValueError(
+                f"Unsupported trace file format: {trace_file_path}. Supported formats are .csv and .parquet"
+            )
+
+        self.trace_time_s = 0.0
+        self.timestamps_s = self.trace_df["timestamp_s"].to_numpy(dtype=float)
+        self.max_timestamp_s = np.max(self.timestamps_s)
 
     def download(
         self, start_time_s: float, wait_time_s: float, segment_info: BitrateLadderEntry
@@ -26,27 +38,33 @@ class StandardTraceProvider(TraceProvider):
 
         segment_size_bytes = segment_info["segment_size_bytes"]
 
-        download_time_s = 0.0
-        throughputs_kbps = []
+        throughputs_bytes_per_s = []
 
-        # Assuming 1 sample per second in the trace
-        self.current_idx += int(wait_time_s)
+        self.trace_time_s += wait_time_s
+
+        start_time_s = self.trace_time_s
 
         # Experience Through-put Traces until the segment is fully downloaded
         while segment_size_bytes > 1e-8:
 
+            # Adjust Index to Provided Trace Times - traces might have different time steps, so we need to find the correct index for the current time
+            self.current_idx = self._index_at_time(self.trace_time_s)
             row = self.trace_df.iloc[self.current_idx]
 
-            throughput = row["throughput_bytes"]
-            throughputs_kbps.append(throughput / 1000.0)  # Convert to kbps
+            throughput = row["throughput_bytes_per_s"]
+            throughputs_bytes_per_s.append(throughput)
 
             segment_size_bytes -= throughput
-            download_time_s += 1.0
 
-            self.current_idx += 1
-            if self.current_idx >= len(self.trace_df) and not self.allow_loop:
-                raise IndexError("End of trace reached and looping is disabled.")
-            else:
-                self.current_idx %= len(self.trace_df)
+            self.trace_time_s += 1.0  # Move forward in time by 1 second
 
-        return download_time_s, throughputs_kbps
+        download_time_s = self.trace_time_s - start_time_s
+
+        return download_time_s, throughputs_bytes_per_s
+
+    def _index_at_time(self, time_s: float) -> int:
+        if self.allow_loop:
+            time_s = time_s % self.max_timestamp_s
+
+        idx = np.searchsorted(self.timestamps_s, time_s, side="right") - 1
+        return min(max(idx, 0), len(self.timestamps_s) - 1)

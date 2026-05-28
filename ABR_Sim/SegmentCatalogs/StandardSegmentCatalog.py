@@ -6,10 +6,11 @@ import pandas as pd
 
 class StandardSegmentCatalog(SegmentCatalog):
 
-    def __init__(self, catalog_path: str):
+    def __init__(self, catalog_path: str, required_length: int | None = None):
 
         self.catalog_path = catalog_path
-        self._catalog = pd.read_csv(catalog_path)
+
+        self._catalog = self._load_catalog(catalog_path, required_length)
 
     def num_segments(self, video_name: str, codec: str) -> int:
         filtered = self._catalog[
@@ -53,3 +54,26 @@ class StandardSegmentCatalog(SegmentCatalog):
             entries.append(entry)
 
         return BitrateLadder(segment_number=segment_number, entries=entries)
+
+    def _load_catalog(
+        self, catalog_path: str, required_length: int | None = None
+    ) -> pd.DataFrame:
+        catalog = pd.read_csv(catalog_path)
+
+        if required_length is not None:
+            assert required_length > 0, "Required length must be a positive integer."
+
+            # Filter Out Video Contents that do not have the required number of segments
+            segment_counts = (
+                catalog.groupby(["video_name", "codec"])["segment_number"]
+                .nunique()
+                .reset_index(name="segment_count")
+            )
+
+            valid_combinations = segment_counts[
+                segment_counts["segment_count"] >= required_length
+            ][["video_name", "codec"]]
+
+            catalog = catalog.merge(valid_combinations, on=["video_name", "codec"])
+
+        return catalog
