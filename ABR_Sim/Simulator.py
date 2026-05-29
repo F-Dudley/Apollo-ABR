@@ -95,7 +95,7 @@ class ABRSimulator:
 
         #
         # Current Segment / Action Selection
-        bitrate_ladder = self.catalog.get_ladder(
+        bitrate_ladder: BitrateLadder = self.catalog.get_ladder(
             self.config.video_name, self.config.codec, self.state.segment_number
         )
 
@@ -104,20 +104,11 @@ class ABRSimulator:
         else:
             action_t = self.policy.select_action(self.state, bitrate_ladder)
 
-        _ladder_entry = bitrate_ladder.get_entry(action_t.bitrate_index)
-
-        bitrate_ladder: BitrateLadder = self.catalog.get_ladder(
-            self.config.video_name,
-            self.config.codec,
-            self.state.segment_number,
-            _ladder_entry,
-        )
-
         segment_info = bitrate_ladder.get_entry(action_t.bitrate_index)
 
         #
         # Download / Through-put Calculations
-        encoded_segment_size_bytes = segment_info["encoded_segment_size_bytes"]
+        segment_size_bytes = segment_info["segment_size_bytes"]
 
         pre_buffer_info = self.buffer_manager.prepare_download(
             buffer_s=self.state.buffer_s, sim_time_s=self.state.sim_time_s
@@ -126,7 +117,7 @@ class ABRSimulator:
         download_time_s, throughput_traces_bytes_per_s = self.trace_provider.download(
             start_time_s=pre_buffer_info.download_start_time_s,
             wait_time_s=pre_buffer_info.wait_time_s,
-            segment_size_bytes=encoded_segment_size_bytes,
+            segment_size_bytes=segment_size_bytes,
         )
 
         post_buffer_info = self.buffer_manager.complete_download(
@@ -232,6 +223,7 @@ class ABRSimulator:
         next_throughputs.extend(info_t["throughput_bytes_per_s"])
 
         next_state = SimulatorState(
+            config=self.config,
             scenario_id=current_state.scenario_id,
             step_t=current_state.step_t + 1,
             segment_number=new_segment_number,

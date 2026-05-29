@@ -1,6 +1,6 @@
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action, get_ladder_entry
+from ..Core.Types import Action
 
 from random import Random
 
@@ -21,7 +21,7 @@ class RandomWalkPolicy(ABRPolicy):
             state_t.last_action, num_representations
         )
 
-        new_idx_entry = get_ladder_entry(ladder, new_idx)
+        new_idx_entry = ladder.get_entry(new_idx)
 
         return Action(
             bitrate_index=new_idx,

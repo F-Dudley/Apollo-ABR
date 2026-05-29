@@ -50,7 +50,7 @@ class StandardSegmentCatalog(SegmentCatalog):
             )
             entries.append(entry)
 
-        return BitrateLadder(segment_number=segment_number, entries=entries)
+        return BitrateLadder(entries=entries)
 
     def _load_catalog(
         self, catalog_path: str, required_length: int | None = None

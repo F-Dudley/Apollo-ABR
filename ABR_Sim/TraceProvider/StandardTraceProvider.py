@@ -33,10 +33,8 @@ class StandardTraceProvider(TraceProvider):
         self.max_timestamp_s = np.max(self.timestamps_s)
 
     def download(
-        self, start_time_s: float, wait_time_s: float, segment_info: BitrateLadderEntry
+        self, start_time_s: float, wait_time_s: float, segment_size_bytes: float
     ) -> tuple[float, list[float]]:
-
-        segment_size_bytes = segment_info["segment_size_bytes"]
 
         throughputs_bytes_per_s = []
 

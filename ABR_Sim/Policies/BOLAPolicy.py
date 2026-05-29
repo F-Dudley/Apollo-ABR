@@ -1,6 +1,6 @@
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action, BitrateLadderEntry, get_ladder_entry
+from ..Core.Types import Action, BitrateLadderEntry
 
 
 @ABRPolicyClass(name="BOLA")
@@ -33,7 +33,7 @@ class BOLAPolicy(ABRPolicy):
                     best_cost = cost
                     best_idx = idx
 
-        new_idx_entry = get_ladder_entry(ladder, best_idx)
+        new_idx_entry = ladder.get_entry(best_idx)
 
         return Action(
             bitrate_index=best_idx,

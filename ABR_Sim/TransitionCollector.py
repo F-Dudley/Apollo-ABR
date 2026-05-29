@@ -20,13 +20,13 @@ class TransitionCollector:
 
         transitions: list[Transition] = []
 
-        iterator = range(self.simulator.num_segments())
+        iterator = range(self.simulator.num_segments())  # type: ignore
 
         if self.show_progress:
             iterator = tqdm(
                 iterator,
                 desc=self.progress_desc or "Simulating ABR Transitions",
-                total=self.simulator.num_segments(),
+                total=self.simulator.total_segments,
                 unit="Segment",
                 leave=False,
             )

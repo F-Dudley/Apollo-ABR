@@ -1,7 +1,7 @@
 from . import ABRPolicyClass
 
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action, BitrateLadder, BitrateLadderEntry, get_ladder_entry
+from ..Core.Types import Action, BitrateLadder, BitrateLadderEntry
 
 
 import numpy as np
@@ -65,7 +65,7 @@ class WISHPolicy(ABRPolicy):
         best_cost = float("inf")
 
         for idx in range(start_idx, max_candidate_idx + 1):
-            entry = get_ladder_entry(ladder, idx)
+            entry = ladder.get_entry(idx)
 
             cost = self._wish_cost(
                 entry=entry,

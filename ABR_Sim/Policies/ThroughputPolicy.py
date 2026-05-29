@@ -1,6 +1,6 @@
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action, get_ladder_entry
+from ..Core.Types import Action
 
 import numpy as np
 
@@ -36,7 +36,7 @@ class ThroughputPolicy(ABRPolicy):
                 else:
                     break
 
-        new_idx_entry = get_ladder_entry(ladder, best_idx)
+        new_idx_entry = ladder.get_entry(best_idx)
 
         return Action(
             bitrate_index=best_idx,

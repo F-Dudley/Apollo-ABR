@@ -1,5 +1,5 @@
 scenario_id,status,output_path,num_transitions,error_type,error_message,traceback
-534a7c8f2169a07ac371933c03d48cd71c3bba77104f21f330881489a64040fa2c342d17b7b18e0850802305788083e036398b67587679546edb5ce1085140b1,failure,,0,AttributeError,'dict' object has no attribute 'get_entry',"Traceback (most recent call last):
+7f9793711f923b23f03ad4ac8adb22e1dda691db02f72af8b5a4aac84ae4227ce10149f79f6ebb9cc3d794eb66d61b6255d7db0a62a5bc87c9a341fb2fd1c2a3,failure,,0,TypeError,BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality',"Traceback (most recent call last):
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\Run_ABR_Sim.py"", line 288, in run_simulation
     transitions, transition_columns = transition_collector.run()
                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -9,12 +9,12 @@ scenario_id,status,output_path,num_transitions,error_type,error_message,tracebac
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Simulator.py"", line 105, in step
     action_t = self.policy.select_action(self.state, bitrate_ladder)
                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 36, in select_action
-    new_idx_entry = ladder.get_entry(best_idx)
-                    ^^^^^^^^^^^^^^^^
-AttributeError: 'dict' object has no attribute 'get_entry'
+  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 26, in select_action
+    cost = self._bola_cost(
+           ^^^^^^^^^^^^^^^^
+TypeError: BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality'
 "
-1529db4335770b588a1a6eea33bd98d56b284fe406412ea6ff74d6295adcc07b47139e407cb0bd11b0e6533553bcdcdecfa67c59d7dae471a585b537a58328f8,failure,,0,AttributeError,'dict' object has no attribute 'get_entry',"Traceback (most recent call last):
+1529db4335770b588a1a6eea33bd98d56b284fe406412ea6ff74d6295adcc07b47139e407cb0bd11b0e6533553bcdcdecfa67c59d7dae471a585b537a58328f8,failure,,0,TypeError,BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality',"Traceback (most recent call last):
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\Run_ABR_Sim.py"", line 288, in run_simulation
     transitions, transition_columns = transition_collector.run()
                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -24,12 +24,12 @@ AttributeError: 'dict' object has no attribute 'get_entry'
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Simulator.py"", line 105, in step
     action_t = self.policy.select_action(self.state, bitrate_ladder)
                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 36, in select_action
-    new_idx_entry = ladder.get_entry(best_idx)
-                    ^^^^^^^^^^^^^^^^
-AttributeError: 'dict' object has no attribute 'get_entry'
+  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 26, in select_action
+    cost = self._bola_cost(
+           ^^^^^^^^^^^^^^^^
+TypeError: BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality'
 "
-7f9793711f923b23f03ad4ac8adb22e1dda691db02f72af8b5a4aac84ae4227ce10149f79f6ebb9cc3d794eb66d61b6255d7db0a62a5bc87c9a341fb2fd1c2a3,failure,,0,AttributeError,'dict' object has no attribute 'get_entry',"Traceback (most recent call last):
+534a7c8f2169a07ac371933c03d48cd71c3bba77104f21f330881489a64040fa2c342d17b7b18e0850802305788083e036398b67587679546edb5ce1085140b1,failure,,0,TypeError,BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality',"Traceback (most recent call last):
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\Run_ABR_Sim.py"", line 288, in run_simulation
     transitions, transition_columns = transition_collector.run()
                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -39,12 +39,12 @@ AttributeError: 'dict' object has no attribute 'get_entry'
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Simulator.py"", line 105, in step
     action_t = self.policy.select_action(self.state, bitrate_ladder)
                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 36, in select_action
-    new_idx_entry = ladder.get_entry(best_idx)
-                    ^^^^^^^^^^^^^^^^
-AttributeError: 'dict' object has no attribute 'get_entry'
+  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 26, in select_action
+    cost = self._bola_cost(
+           ^^^^^^^^^^^^^^^^
+TypeError: BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality'
 "
-c96f98d1499127722f256d1ea646b6e7913a467d0308fea18cb75f6ce321b4104b88007343d912f2693f3d02964470644d1a0c023ba24a8089168c78b33f755d,failure,,0,AttributeError,'dict' object has no attribute 'get_entry',"Traceback (most recent call last):
+c96f98d1499127722f256d1ea646b6e7913a467d0308fea18cb75f6ce321b4104b88007343d912f2693f3d02964470644d1a0c023ba24a8089168c78b33f755d,failure,,0,TypeError,BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality',"Traceback (most recent call last):
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\Run_ABR_Sim.py"", line 288, in run_simulation
     transitions, transition_columns = transition_collector.run()
                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -54,12 +54,12 @@ c96f98d1499127722f256d1ea646b6e7913a467d0308fea18cb75f6ce321b4104b88007343d912f2
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Simulator.py"", line 105, in step
     action_t = self.policy.select_action(self.state, bitrate_ladder)
                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 36, in select_action
-    new_idx_entry = ladder.get_entry(best_idx)
-                    ^^^^^^^^^^^^^^^^
-AttributeError: 'dict' object has no attribute 'get_entry'
+  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 26, in select_action
+    cost = self._bola_cost(
+           ^^^^^^^^^^^^^^^^
+TypeError: BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality'
 "
-51cacf0763adb577a7764b528a1b0e37d1deacfb52bd0baa810e5f252f6aa8bdc487355440f3a7d10ee6fd0b376589e9d6de871bd4be9de8aab2b396669c58e4,failure,,0,AttributeError,'dict' object has no attribute 'get_entry',"Traceback (most recent call last):
+51cacf0763adb577a7764b528a1b0e37d1deacfb52bd0baa810e5f252f6aa8bdc487355440f3a7d10ee6fd0b376589e9d6de871bd4be9de8aab2b396669c58e4,failure,,0,TypeError,BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality',"Traceback (most recent call last):
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\Run_ABR_Sim.py"", line 288, in run_simulation
     transitions, transition_columns = transition_collector.run()
                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -69,8 +69,8 @@ AttributeError: 'dict' object has no attribute 'get_entry'
   File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Simulator.py"", line 105, in step
     action_t = self.policy.select_action(self.state, bitrate_ladder)
                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 36, in select_action
-    new_idx_entry = ladder.get_entry(best_idx)
-                    ^^^^^^^^^^^^^^^^
-AttributeError: 'dict' object has no attribute 'get_entry'
+  File ""D:\_work\PhD\ABR-JEPA\Dataset\ABR-Sim\ABR_Sim\Policies\BOLAPolicy.py"", line 26, in select_action
+    cost = self._bola_cost(
+           ^^^^^^^^^^^^^^^^
+TypeError: BOLAPolicy._bola_cost() got an unexpected keyword argument 'quality'
 "
