@@ -1,4 +1,5 @@
 import inspect
+from typing import Callable
 
 from ..Core.Interfaces import ABRPolicy
 
@@ -34,12 +35,46 @@ class PolicyRegistry:
         return policy_class(**filtered_kwargs)
 
 
-def ABRPolicyClass(cls, name: str | None = None):
-    def decorator(cls):
-        policy_name = name or cls.__name__
+def ABRPolicyClass(
+    arg: type[ABRPolicy] | str | None = None,
+    *,
+    name: str | None = None,
+) -> Callable[[type[ABRPolicy]], type[ABRPolicy]] | type[ABRPolicy]:
 
-        cls.name = policy_name
-        PolicyRegistry.register(policy_name, cls)
-        return cls
+    def decorator(policy_class: type[ABRPolicy]) -> type[ABRPolicy]:
+        policy_name = name
 
+        if policy_name is None and isinstance(arg, str):
+            policy_name = arg
+
+        if policy_name is None:
+            policy_name = policy_class.__name__
+
+        policy_class.name = policy_name
+        PolicyRegistry.register(policy_name, policy_class)
+
+        return policy_class
+
+    # Supports @ABRPolicyClass without brackets.
+    if isinstance(arg, type):
+        return decorator(arg)
+
+    # Supports @ABRPolicyClass("random") and @ABRPolicyClass(name="random")
     return decorator
+
+
+# Import all policy classes to ensure they are registered.
+from .RandomPolicy import RandomPolicy
+from .RandomWalkPolicy import RandomWalkPolicy
+from .ThroughputPolicy import ThroughputPolicy
+from .BOLAPolicy import BOLAPolicy
+from .WISHPolicy import WISHPolicy
+
+__all__ = [
+    "RandomPolicy",
+    "RandomWalkPolicy",
+    "ThroughputPolicy",
+    "BOLAPolicy",
+    "WISHPolicy",
+    "HybridPolicy",
+]

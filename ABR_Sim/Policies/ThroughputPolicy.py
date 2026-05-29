@@ -1,6 +1,6 @@
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action
+from ..Core.Types import Action, get_ladder_entry
 
 import numpy as np
 
@@ -35,6 +35,17 @@ class ThroughputPolicy(ABRPolicy):
                     best_idx += 1
                 else:
                     break
+
+        new_idx_entry = get_ladder_entry(ladder, best_idx)
+
+        return Action(
+            bitrate_index=best_idx,
+            bitrate_kbps=new_idx_entry["bitrate_kbps"],
+            resolution_width=new_idx_entry["resolution_width"],
+            resolution_height=new_idx_entry["resolution_height"],
+            vmaf=new_idx_entry["vmaf"],
+            segment_size_bytes=new_idx_entry["segment_size_bytes"],
+        )
 
     def _harmonic_mean(self, throughputs_kbps: list[float]) -> float:
         if len(throughputs_kbps) == 0:

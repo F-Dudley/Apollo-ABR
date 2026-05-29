@@ -8,19 +8,21 @@ from tqdm.auto import tqdm
 from collections import deque
 from dataclasses import dataclass, asdict, is_dataclass
 
-from .Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
-from .Core.Manifest import Manifest, ManifestEntry
-from .Core.Types import ScenarioConfig, Transition
-from .Core.BufferManager import BufferManager
+from ABR_Sim.Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
+from ABR_Sim.Core.Manifest import Manifest, ManifestEntry
+from ABR_Sim.Core.Types import ScenarioConfig, Transition
+from ABR_Sim.Core.BufferManager import BufferManager
 
-from .Policies import PolicyRegistry
-from .Simulator import ABRSimulator
-from .TraceProvider.StandardTraceProvider import StandardTraceProvider
-from .TransitionCollector import TransitionCollector
+from ABR_Sim.Policies import PolicyRegistry
+from ABR_Sim.Simulator import ABRSimulator
+from ABR_Sim.SegmentCatalogs.StandardSegmentCatalog import StandardSegmentCatalog
+from ABR_Sim.TraceProvider.StandardTraceProvider import StandardTraceProvider
+from ABR_Sim.TransitionCollector import TransitionCollector
 
-from .TransitionProviders.SEEDEnergyInfoProvider import SEEDEnergyInfoProvider
+from ABR_Sim.TransitionProviders.SEEDEnergyInfoProvider import SEEDEnergyInfoProvider
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+import traceback
 
 segment_catalog: SegmentCatalog | None = None
 
@@ -90,6 +92,11 @@ def parse_args():
         default=None,
         help="Maximum number of scenarios to run.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Whether to print detailed logs during simulation.",
+    )
     return parser.parse_args()
 
 
@@ -122,7 +129,7 @@ class SimConfig:
 
 def init_worker(segment_catalog_path: str):
     global segment_catalog
-    segment_catalog = SegmentCatalog(segment_catalog_path)
+    segment_catalog = StandardSegmentCatalog(segment_catalog_path)
 
 
 def flatten_value(value: Any, prefix: str) -> dict[str, Any]:
@@ -313,23 +320,35 @@ def run_simulation(
             "status": "failure",
             "output_path": None,
             "num_transitions": 0,
-            "error": str(e),
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "traceback": traceback.format_exc(),
         }
 
 
 def get_video_codec_uniques(segment_catalog_path: str) -> tuple[list[str], list[str]]:
-    segment_catalog = SegmentCatalog(segment_catalog_path)
+    segment_catalog = StandardSegmentCatalog(segment_catalog_path)
 
-    return (segment_catalog.get_video_list(), segment_catalog.get_codec_list())
+    return (
+        list(segment_catalog.get_uniques("video_name")),
+        list(segment_catalog.get_uniques("codec")),
+    )
 
 
-if __name__ == "__main__":
+def main():
 
     args = parse_args()
+    print("ABR-Sim Configuration: ", args)
 
     os.makedirs(args.output_directory, exist_ok=True)
 
     videos, codecs = get_video_codec_uniques(args.segment_catalog)
+
+    if args.verbose:
+        print(f"Videos: {videos}")
+        print(f"Codecs: {codecs}")
+        print(f"Network Types: {args.network_types}")
+        print(f"Policies: {PolicyRegistry.available_policies()}")
 
     # Load the manifest
     manifest = Manifest(
@@ -348,15 +367,29 @@ if __name__ == "__main__":
     )
 
     # Scenarios
+    if args.max_scenarios is not None:
+        print(f"Limiting to first {args.max_scenarios} scenarios for testing.")
+        manifest = list(manifest)[: args.max_scenarios]
 
-    scenario_entries = [
-        entry
-        for entry in manifest
-        if validate_manifest_entry(entry, args.output_directory)
-    ]
+    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+        results = executor.map(
+            lambda entry: validate_manifest_entry(entry, args.output_directory),
+            manifest,
+            chunksize=1000,
+        )
 
-    if args.max_scenarios is not None and len(scenario_entries) > args.max_scenarios:
-        scenario_entries = scenario_entries[: args.max_scenarios]
+        scenario_entries = [
+            entry
+            for entry in tqdm(results, total=len(manifest), desc="Validating scenarios")
+            if entry is not None
+        ]
+
+    assert any(
+        scenario_entries
+    ), "Non-Valid Scenarios found. Please check the manifest and output directory for issues."
+
+    if args.verbose:
+        print(f"Total valid scenarios to run: {len(scenario_entries)}")
 
     with ProcessPoolExecutor(
         max_workers=args.max_workers,
@@ -368,7 +401,7 @@ if __name__ == "__main__":
             executor.submit(
                 run_simulation, permutation, args.output_directory, sim_config
             )
-            for permutation in scenario_entries
+            for permutation in manifest
         ]
 
         results = []
@@ -384,3 +417,7 @@ if __name__ == "__main__":
     summary_path = os.path.join(args.output_directory, "run_summary.csv")
     pd.DataFrame(results).to_csv(summary_path, index=False)
     print(f"Simulation run summary saved to '{summary_path}'.")
+
+
+if __name__ == "__main__":
+    main()

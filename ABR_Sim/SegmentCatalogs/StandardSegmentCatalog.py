@@ -23,11 +23,8 @@ class StandardSegmentCatalog(SegmentCatalog):
             )
         return len(filtered["segment_number"].unique())
 
-    def get_video_amount(self) -> list[str]:
-        return self._catalog["video_name"].unique().tolist()
-
-    def get_codec_amount(self) -> list[str]:
-        return self._catalog["codec"].unique().tolist()
+    def get_uniques(self, column: str) -> list[str]:
+        return self._catalog[column].unique()
 
     def get_ladder(
         self, video_name: str, codec: str, segment_number: int
@@ -75,5 +72,7 @@ class StandardSegmentCatalog(SegmentCatalog):
             ][["video_name", "codec"]]
 
             catalog = catalog.merge(valid_combinations, on=["video_name", "codec"])
+
+        print(catalog.head())
 
         return catalog

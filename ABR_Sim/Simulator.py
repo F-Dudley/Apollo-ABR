@@ -51,10 +51,11 @@ class ABRSimulator:
             scenario_id=self.config.scenario_id,
             step_t=0,
             segment_number=0,
+            segments_remaining=0,
             sim_time_s=0.0,
             buffer_s=self.config.initial_buffer_s,
             last_actions=deque(maxlen=5),
-            last_throughputs_kbps=deque(maxlen=5),
+            last_throughputs_bytes_per_s=deque(maxlen=5),
             done=False,
         )
 

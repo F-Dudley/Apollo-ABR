@@ -83,10 +83,10 @@ class BitrateLadder(TypedDict):
     def __iter__(self) -> iter[BitrateLadderEntry]:
         return iter(self.entries)
 
-    def get_entry(self, bitrate_index: int) -> BitrateLadderEntry:
-        if bitrate_index < 0 or bitrate_index >= len(self.entries):
-            raise ValueError(
-                f"Invalid bitrate index {bitrate_index} for segment {self.segment_number}. Valid range is [0, {len(self.entries) - 1}]."
-            )
 
-        return self.entries[bitrate_index]
+def get_ladder_entry(ladder: BitrateLadder, bitrate_index: int) -> BitrateLadderEntry:
+    if bitrate_index < 0 or bitrate_index >= len(ladder):
+        raise IndexError(
+            f"Bitrate index {bitrate_index} out of range for ladder of size {len(ladder)}"
+        )
+    return ladder.entries[bitrate_index]

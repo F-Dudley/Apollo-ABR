@@ -1,7 +1,7 @@
 from random import Random
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action, BitrateLadderEntry
+from ..Core.Types import Action, BitrateLadderEntry, get_ladder_entry
 
 
 @ABRPolicyClass(name="Random")
@@ -14,8 +14,8 @@ class RandomPolicy(ABRPolicy):
     def select_action(self, state_t, ladder) -> Action:
         num_representations = len(ladder)
 
-        ladder_entry: BitrateLadderEntry = ladder.get_entry(
-            self.random.randint(0, num_representations - 1)
+        ladder_entry: BitrateLadderEntry = get_ladder_entry(
+            ladder, self.random.randint(0, num_representations - 1)
         )
 
         return Action(
