@@ -41,6 +41,8 @@ class StandardTraceProvider(TraceProvider):
         self.trace_time_s += wait_time_s
         download_start_trace_time_s = self.trace_time_s
 
+        trace_idx_start = self._index_at_time(self.trace_time_s)
+
         remaining_bytes = segment_size_bytes
 
         # Experience Through-put Traces until the segment is fully downloaded
@@ -63,6 +65,7 @@ class StandardTraceProvider(TraceProvider):
             self.trace_time_s += used_time_s  # Move forward in time by the used time
 
         download_time_s = self.trace_time_s - download_start_trace_time_s
+        trace_idx_end = self._index_at_time(self.trace_time_s)
 
         trace_debug = {
             "trace_time_start_s": download_start_trace_time_s,

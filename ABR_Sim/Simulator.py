@@ -143,6 +143,10 @@ class ABRSimulator:
             "buffer_s_next": post_buffer_info.buffer_s_next,
             # Timing Info
             "total_time_used_s": post_buffer_info.total_time_used_s,
+            "expected_download_time_s": (
+                segment_size_bytes / max(np.mean(throughput_traces_bytes_per_s), 1.0)
+            ),
+            **trace_debug,
         }
 
         next_segment_number = self.state.segment_number + 1
