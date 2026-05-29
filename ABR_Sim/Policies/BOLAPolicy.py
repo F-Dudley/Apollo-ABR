@@ -10,7 +10,7 @@ class BOLAPolicy(ABRPolicy):
         super().__init__()
 
         self.v_quality = 15.0
-        self.gamma = 0.1
+        self.gamma = 0.15
 
     def select_action(self, state_t, ladder) -> Action:
         if len(state_t.last_actions) == 0:
