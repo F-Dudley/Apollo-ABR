@@ -21,7 +21,7 @@ class ThroughputPolicy(ABRPolicy):
             best_idx = 0
         else:
             estimated_bytes_per_second = self._harmonic_mean(
-                state_t.last_throughputs_kbps * 1000
+                state_t.last_throughputs_bytes_per_s
             )
 
             estimated_bytes_per_second *= self.safety_factor
@@ -47,11 +47,11 @@ class ThroughputPolicy(ABRPolicy):
             segment_size_bytes=new_idx_entry["segment_size_bytes"],
         )
 
-    def _harmonic_mean(self, throughputs_kbps: list[float]) -> float:
-        if len(throughputs_kbps) == 0:
+    def _harmonic_mean(self, last_throughputs_bytes_per_s: list[float]) -> float:
+        if len(last_throughputs_bytes_per_s) == 0:
             return 0.0
 
-        arr = np.array(throughputs_kbps, dtype=float)
+        arr = np.array(last_throughputs_bytes_per_s, dtype=float)
         arr = arr[
             arr > 0
         ]  # Filter out zero or negative throughputs to avoid division by zero

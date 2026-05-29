@@ -28,21 +28,21 @@ class WISHPolicy(ABRPolicy):
         if buffer_s < self.low_buffer_threshold_s:
             return self._make_action(ladder, bitrate_index=0)
 
-        if len(state_t.last_throughputs_kbps) == 0:
+        if len(state_t.last_throughputs_bytes_per_s) == 0:
             return self._make_action(ladder, bitrate_index=0)
         else:
-            last_throughput = state_t.last_throughputs_kbps[-1]
-            smoothed_throughput_bytes_per_s = last_throughput * 1000
+            last_throughput_bytes_per_s = state_t.last_throughputs_bytes_per_s[-1]
 
         if self.smoothed_throughput_bytes_per_second is None:
-            self.smoothed_throughput_bytes_per_second = smoothed_throughput_bytes_per_s
+            self.smoothed_throughput_bytes_per_second = last_throughput_bytes_per_s
         else:
             self.smoothed_throughput_bytes_per_s = (
-                1.0 - self.omega
-            ) * self.smoothed_throughput_bytes_per_s + self.omega * last_throughput
+                (1.0 - self.omega) * self.smoothed_throughput_bytes_per_s
+                + self.omega * last_throughput_bytes_per_s
+            )
 
         estim_throughput_bytes_per_s = min(
-            self.smoothed_throughput_bytes_per_s, smoothed_throughput_bytes_per_s
+            self.smoothed_throughput_bytes_per_s, last_throughput_bytes_per_s
         )
 
         alpha, beta, gamma = self._compute_weights(state_t, ladder)
@@ -53,7 +53,7 @@ class WISHPolicy(ABRPolicy):
 
         max_candidate_idx = self._max_candidate_index(
             ladder=ladder,
-            last_throughput_bytes_per_s=smoothed_throughput_bytes_per_s,
+            last_throughput_bytes_per_s=last_throughput_bytes_per_s,
             start_idx=start_idx,
         )
 

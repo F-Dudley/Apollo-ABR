@@ -9,7 +9,7 @@ class BOLAPolicy(ABRPolicy):
     def __init__(self):
         super().__init__()
 
-        self.v_quality = 20.0
+        self.v_quality = 15.0
         self.gamma = 0.1
 
     def select_action(self, state_t, ladder) -> Action:
@@ -24,7 +24,7 @@ class BOLAPolicy(ABRPolicy):
             for idx in range(len(ladder)):
                 entry = ladder.get_entry(idx)
                 cost = self._bola_cost(
-                    quality=entry["vmaf"],
+                    vmaf=entry["vmaf"],
                     segment_size_bytes=entry["segment_size_bytes"],
                     segment_duration_s=segment_duration_s,
                     buffer_s=state_t.buffer_s,

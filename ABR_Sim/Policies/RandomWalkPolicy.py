@@ -32,10 +32,12 @@ class RandomWalkPolicy(ABRPolicy):
             segment_size_bytes=new_idx_entry["segment_size_bytes"],
         )
 
-    def _get_stepped_bitrate_index(self, action, num_representations) -> int:
-        if action is None:
+    def _get_stepped_bitrate_index(self, last_action, num_representations) -> int:
+        if last_action is None:
             new_idx = self.rng.randint(0, num_representations - 1)
         else:
             delta = self.rng.randint(-self.max_step_size, self.max_step_size)
-            new_idx = max(0, min(action.bitrate_index + delta, num_representations - 1))
+            new_idx = max(
+                0, min(last_action.bitrate_index + delta, num_representations - 1)
+            )
         return new_idx

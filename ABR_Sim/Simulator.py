@@ -114,10 +114,12 @@ class ABRSimulator:
             buffer_s=self.state.buffer_s, sim_time_s=self.state.sim_time_s
         )
 
-        download_time_s, throughput_traces_bytes_per_s = self.trace_provider.download(
-            start_time_s=pre_buffer_info.download_start_time_s,
-            wait_time_s=pre_buffer_info.wait_time_s,
-            segment_size_bytes=segment_size_bytes,
+        download_time_s, throughput_traces_bytes_per_s, trace_debug = (
+            self.trace_provider.download(
+                start_time_s=pre_buffer_info.download_start_time_s,
+                wait_time_s=pre_buffer_info.wait_time_s,
+                segment_size_bytes=segment_size_bytes,
+            )
         )
 
         post_buffer_info = self.buffer_manager.complete_download(
@@ -125,6 +127,7 @@ class ABRSimulator:
             download_start_time_s=pre_buffer_info.download_start_time_s,
             download_time_s=download_time_s,
             decoding_time_s=segment_info.get("decoding_duration_s", 0.0),
+            wait_time_s=pre_buffer_info.wait_time_s,
         )
 
         info_t = {

@@ -48,6 +48,23 @@ class StandardSegmentCatalog(SegmentCatalog):
                 vmaf=row["vmaf"],
                 segment_size_bytes=row["encoded_segment_size_bytes"],
             )
+
+            # Possible General Values
+            entry.update(
+                {
+                    "encoding_duration_s": row.get("encoding_duration_s", 0.0),
+                    "decoding_duration_s": row.get("decoding_duration_s", 0.0),
+                }
+            )
+
+            # Energy Values (if available) - These are optional and may not be present in all catalogs, so we provide default values if they are missing.
+            entry.update(
+                {
+                    "used_energy_encstore_j": row.get("used_energy_encstore_j", 0.0),
+                    "used_energy_decoding_j": row.get("used_energy_decoding_j", 0.0),
+                    "used_energy_display_j": row.get("used_energy_display_j", 0.0),
+                }
+            )
             entries.append(entry)
 
         return BitrateLadder(entries=entries)
@@ -72,7 +89,5 @@ class StandardSegmentCatalog(SegmentCatalog):
             ][["video_name", "codec"]]
 
             catalog = catalog.merge(valid_combinations, on=["video_name", "codec"])
-
-        print(catalog.head())
 
         return catalog

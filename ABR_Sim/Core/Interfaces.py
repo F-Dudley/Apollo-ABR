@@ -26,13 +26,17 @@ class SegmentCatalog(Protocol):
 class TraceProvider(Protocol):
 
     def download(
-        self, start_time_s: float, wait_time_s: float, segment_size_bytes: float
-    ) -> tuple[float, list[float], list[float]]:
+        self,
+        start_time_s: float,
+        wait_time_s: float,
+        segment_size_bytes: float,
+    ) -> tuple[float, list[float], dict]:
         """
         Returns:
             download_time_s: float
             throughput_trace_kbps: list[float],
             signal_strength_dbm: list[float]
+            debug_info: dict (can contain any additional information about the download, e.g. trace indices used, etc.)
         """
         ...
 

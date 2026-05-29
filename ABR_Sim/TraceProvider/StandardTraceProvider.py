@@ -39,11 +39,12 @@ class StandardTraceProvider(TraceProvider):
         throughputs_bytes_per_s = []
 
         self.trace_time_s += wait_time_s
+        download_start_trace_time_s = self.trace_time_s
 
-        start_time_s = self.trace_time_s
+        remaining_bytes = segment_size_bytes
 
         # Experience Through-put Traces until the segment is fully downloaded
-        while segment_size_bytes > 1e-8:
+        while remaining_bytes > 1e-8:
 
             # Adjust Index to Provided Trace Times - traces might have different time steps, so we need to find the correct index for the current time
             self.current_idx = self._index_at_time(self.trace_time_s)
@@ -52,13 +53,26 @@ class StandardTraceProvider(TraceProvider):
             throughput = row["throughput_bytes_per_s"]
             throughputs_bytes_per_s.append(throughput)
 
-            segment_size_bytes -= throughput
+            time_needed_s = remaining_bytes / throughput
 
-            self.trace_time_s += 1.0  # Move forward in time by 1 second
+            used_time_s = min(
+                1.0, time_needed_s
+            )  # Use at most 1 second of the trace at a time
 
-        download_time_s = self.trace_time_s - start_time_s
+            remaining_bytes -= throughput * used_time_s
+            self.trace_time_s += used_time_s  # Move forward in time by the used time
 
-        return download_time_s, throughputs_bytes_per_s
+        download_time_s = self.trace_time_s - download_start_trace_time_s
+
+        trace_debug = {
+            "trace_time_start_s": download_start_trace_time_s,
+            "trace_time_end_s": self.trace_time_s,
+            "trace_idx_start": trace_idx_start,
+            "trace_idx_end": trace_idx_end,
+            "trace_samples_used": len(throughputs_bytes_per_s),
+        }
+
+        return download_time_s, throughputs_bytes_per_s, trace_debug
 
     def _index_at_time(self, time_s: float) -> int:
         if self.allow_loop:
