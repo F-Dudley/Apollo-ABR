@@ -11,6 +11,8 @@ TRACES_ROOT = os.path.join(os.path.dirname(__file__))
 TRACES_RAW_DIR = os.path.join(TRACES_ROOT, "raw")
 TRACES_COOKED_DIR = os.path.join(TRACES_ROOT, "cooked")
 
+from Parsing import *
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Process ABR-Sim Trace Files")
@@ -34,6 +36,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--segment-duration-s", type=int, default=5)
     parser.add_argument("--max-download-duration-s", type=int, nargs="+", default=4)
+    parser.add_argument("--train-test-split", type=float, default=0.8)
+    parser.add_argument("--random-seed", type=int, default=47)
     return parser.parse_args()
 
 
@@ -44,167 +48,31 @@ def hash_name(name: str, digest_size: int = 32) -> str:
     return h.hexdigest()
 
 
-def load_raw_trace(trace_file: Path) -> pd.DataFrame:
-    return pd.read_csv(
-        trace_file,
-        sep=r"\s+",
-        header=None,
-        names=["timestamp_s", "throughput_mbps"],
-        engine="python",
-    )
+def shuffle_traces(trace_files: list[Path], seed: int = 42) -> list[Path]:
+    np.random.seed(seed)
+    shuffled_files = trace_files.copy()
+    np.random.shuffle(shuffled_files)
+    np.random.seed(None)
+    return shuffled_files
 
 
-def required_throughput_mbps(
-    bitrate_mbps: float, segment_duration_s: int, max_download_duration_s: int
-) -> float:
-    segment_size_megabits = bitrate_mbps * segment_duration_s
-    required_throughput_mbps = segment_size_megabits / max_download_duration_s
-    return required_throughput_mbps
-
-
-def highest_supported_bitrate_mbps(
-    throughput_mbps: float,
-    bitrate_ladder_mbps: list[float],
-    segment_duration_s: int,
-    max_download_duration_s: int,
-) -> float:
-    for bitrate in sorted(bitrate_ladder_mbps, reverse=True):
-        if throughput_mbps >= required_throughput_mbps(
-            bitrate, segment_duration_s, max_download_duration_s
-        ):
-            return bitrate
-    return 0.0
-
-
-def add_sample_durations(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.sort_values("timestamp_s").reset_index(drop=True).copy()
-
-    timestamps = df["timestamp_s"].to_numpy(dtype=float)
-
-    if len(timestamps) <= 1:
-        df["sample_duration_s"] = 1.0
-        return df
-
-    diffs = np.diff(timestamps)
-    valid_diffs = diffs[diffs > 0]
-
-    if len(valid_diffs) == 0:
-        median_interval = 1.0
-    else:
-        median_interval = float(np.median(valid_diffs))
-
-    durations = np.empty(len(timestamps), dtype=float)
-    durations[:-1] = np.maximum(diffs, 1e-9)
-    durations[-1] = median_interval
-
-    df["sample_duration_s"] = durations
-
-    return df
-
-
-def weighted_quantile(
-    values: np.ndarray,
-    weights: np.ndarray,
-    q: float,
-) -> float:
-    values = np.asarray(values, dtype=float)
-    weights = np.asarray(weights, dtype=float)
-
-    valid = np.isfinite(values) & np.isfinite(weights) & (weights > 0)
-
-    values = values[valid]
-    weights = weights[valid]
-
-    if len(values) == 0:
-        return float("nan")
-
-    order = np.argsort(values)
-    values = values[order]
-    weights = weights[order]
-
-    cumulative = np.cumsum(weights)
-    threshold = q * cumulative[-1]
-
-    return float(values[np.searchsorted(cumulative, threshold)])
-
-
-def get_throughput_stats(
-    df: pd.DataFrame,
-    bitrate_ladder_mbps: list[float],
-    segment_duration_s: int = 5,
-    max_download_duration_s: int = 4,
-) -> dict[str, float]:
-
-    df = add_sample_durations(df)
-
-    if "throughput_mbps" in df.columns:
-        throughput_mbps = df["throughput_mbps"].to_numpy(dtype=float)
-    else:
-        throughput_mbps = (
-            df["throughput_bytes_per_s"].to_numpy(dtype=float) * 8.0 / 1_000_000.0
-        )
-
-    durations = df["sample_duration_s"].to_numpy(dtype=float)
-
-    mean_throughput_mbps = float(np.average(throughput_mbps, weights=durations))
-    min_throughput_mbps = float(np.min(throughput_mbps))
-    max_throughput_mbps = float(np.max(throughput_mbps))
-
-    p05_throughput_mbps = weighted_quantile(throughput_mbps, durations, 0.05)
-    p50_throughput_mbps = weighted_quantile(throughput_mbps, durations, 0.50)
-    p95_throughput_mbps = weighted_quantile(throughput_mbps, durations, 0.95)
-
-    stats = {
-        "mean_throughput_mbps": mean_throughput_mbps,
-        "min_throughput_mbps": min_throughput_mbps,
-        "p05_throughput_mbps": p05_throughput_mbps,
-        "p50_throughput_mbps": p50_throughput_mbps,
-        "p95_throughput_mbps": p95_throughput_mbps,
-        "max_throughput_mbps": max_throughput_mbps,
-        "duration_s": float(np.sum(durations)),
-        "num_samples": int(len(df)),
-        "segment_duration_s": float(segment_duration_s),
-        "max_download_duration_s": float(max_download_duration_s),
-        "download_headroom_factor": float(segment_duration_s / max_download_duration_s),
-    }
-
-    for name, throughput in [
-        ("mean", mean_throughput_mbps),
-        ("min", min_throughput_mbps),
-        ("p05", p05_throughput_mbps),
-        ("p50", p50_throughput_mbps),
-        ("p95", p95_throughput_mbps),
-        ("max", max_throughput_mbps),
-    ]:
-        stats[f"{name}_supported_bitrate_mbps"] = highest_supported_bitrate_mbps(
-            throughput,
-            bitrate_ladder_mbps,
-            segment_duration_s,
-            max_download_duration_s,
-        )
-
-    for bitrate_mbps in bitrate_ladder_mbps:
-        required = required_throughput_mbps(
-            bitrate_mbps,
-            segment_duration_s,
-            max_download_duration_s,
-        )
-
-        supported = throughput_mbps >= required
-        supported_duration_s = float(np.sum(durations[supported]))
-        support_pct = 100.0 * supported_duration_s / max(float(np.sum(durations)), 1e-9)
-
-        key = str(bitrate_mbps).replace(".", "_")
-        stats[f"support_time_pct_{key}mbps"] = support_pct
-
-    return stats
-
-
-def process_traces(trace_dir: str, output_dir: str, args: argparse.Namespace) -> None:
+def process_traces(
+    trace_dir: str,
+    output_dir: str,
+    args: argparse.Namespace,
+    train_test_split: float = 0.8,
+    random_seed: int = 42,
+) -> None:
 
     summary_data = []
 
-    trace_files = [f for f in Path(trace_dir).glob("**/*") if f.is_file()]
+    # Loop over all Directories in "trace_dir", as they represent different trace sources (e.g. "fcc", "huawei", "synthetic", etc.)
+
+    trace_path = Path(trace_dir)
+
+    np.random.seed(random_seed)
+
+    trace_files = [f for f in trace_path.glob("**/*") if f.is_file()]
 
     print(f"Found {len(trace_files)} trace files in {trace_dir}")
     for trace_file in tqdm(trace_files, desc="Processing Trace Files"):
@@ -258,16 +126,57 @@ if __name__ == "__main__":
     # Load All Trace files of format "timestamp (in seconds), throughput (in Megabits per second)"
     # Files are not with a header, per line seperated by a space.
 
-    # Not all Files have an extension, but if they do its .log.
-
     raw_dir = Path(TRACES_RAW_DIR)
+    assert (
+        raw_dir.is_dir()
+    ), f"Raw trace directory '{raw_dir}' does not exist or is not a directory"
+
     output_dir = Path(TRACES_COOKED_DIR)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_subdirs = [d for d in raw_dir.glob("*") if d.is_dir()]
-    for raw_subdir in raw_subdirs:
-        relative_path = raw_subdir.relative_to(raw_dir)
+    trace_summaries = []
 
-        output_subdir = output_dir / relative_path
-        output_subdir.mkdir(parents=True, exist_ok=True)
+    for source_dir in raw_dir.glob("*"):
+        if not source_dir.is_dir():
+            continue
 
-        process_traces(str(raw_subdir), str(output_subdir), args)
+        # Find All Files in Source Direct, and Shuffle Ordering to ensure random distribution of sources in train/test sets.
+        trace_files = [f for f in source_dir.glob("**/*") if f.is_file()]
+        traces_files = shuffle_traces(trace_files, seed=args.random_seed)
+
+        num_train_files = int(len(trace_files) * args.train_test_split)
+
+        parser = ParserRegistry.get_parser(source_dir.name)
+        if parser is None:
+            raise ValueError(f"No parser registered for source '{source_dir.name}'")
+
+        for i, trace_file in tqdm(
+            enumerate(trace_files),
+            desc=f"Processing '{source_dir.name}' Traces",
+            total=len(trace_files),
+        ):
+
+            scenario_id = hash_name(str(trace_file.relative_to(raw_dir)))
+            output_target = "train" if i < num_train_files else "test"
+
+            file_output = output_dir / output_target
+            file_output.mkdir(parents=True, exist_ok=True)
+
+            try:
+                trace_summary = parser.parse_file(
+                    trace_id=scenario_id,
+                    split_type=output_target,
+                    trace_file=trace_file,
+                    output_file=file_output / f"{scenario_id}.parquet",
+                    bitrate_ladder_mbps=args.ladder_bitrates_mbps,
+                    segment_duration_s=args.segment_duration_s,
+                    max_download_duration_s=args.max_download_duration_s,
+                )
+
+                trace_summaries.append(trace_summary)
+            except Exception as e:
+                print(f"Error processing trace '{trace_file}'")
+                raise e
+
+    summary_df = pd.DataFrame(trace_summaries)
+    summary_df.to_csv(output_dir / "trace_summary.csv", index=False)
