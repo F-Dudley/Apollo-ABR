@@ -1,6 +1,6 @@
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action
+from ..Core.Types import SimConfig, Action
 
 from random import Random
 
@@ -8,8 +8,8 @@ from random import Random
 @ABRPolicyClass(name="RandomWalk")
 class RandomWalkPolicy(ABRPolicy):
 
-    def __init__(self, seed: int = None, max_step_size: int = 1):
-        super().__init__(seed)
+    def __init__(self, sim_config: SimConfig, seed: int = None, max_step_size: int = 1):
+        super().__init__(simconfig=sim_config, seed=seed)
 
         self.rng = Random(seed)
         self.max_step_size = max_step_size
@@ -17,9 +17,12 @@ class RandomWalkPolicy(ABRPolicy):
     def select_action(self, state_t, ladder) -> Action:
         num_representations = len(ladder)
 
-        new_idx = self._get_stepped_bitrate_index(
-            state_t.last_action, num_representations
-        )
+        if state_t.last_actions is None or len(state_t.last_actions) == 0:
+            new_idx = self.rng.randint(0, num_representations - 1)
+        else:
+            new_idx = self._get_stepped_bitrate_index(
+                state_t.last_actions, num_representations
+            )
 
         new_idx_entry = ladder.get_entry(new_idx)
 
@@ -32,12 +35,12 @@ class RandomWalkPolicy(ABRPolicy):
             segment_size_bytes=new_idx_entry["segment_size_bytes"],
         )
 
-    def _get_stepped_bitrate_index(self, last_action, num_representations) -> int:
-        if last_action is None:
+    def _get_stepped_bitrate_index(self, last_actions, num_representations) -> int:
+        if last_actions is None or len(last_actions) == 0:
             new_idx = self.rng.randint(0, num_representations - 1)
         else:
             delta = self.rng.randint(-self.max_step_size, self.max_step_size)
             new_idx = max(
-                0, min(last_action.bitrate_index + delta, num_representations - 1)
+                0, min(last_actions[-1].bitrate_index + delta, num_representations - 1)
             )
         return new_idx

@@ -1,14 +1,14 @@
 from random import Random
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action, BitrateLadderEntry
+from ..Core.Types import SimConfig, Action, BitrateLadderEntry
 
 
 @ABRPolicyClass(name="Random")
 class RandomPolicy(ABRPolicy):
 
-    def __init__(self, seed: int = None):
-        super().__init__(seed=seed)
+    def __init__(self, sim_config: SimConfig, seed: int = None):
+        super().__init__(simconfig=sim_config, seed=seed)
         self.random = Random(seed)
 
     def select_action(self, state_t, ladder) -> Action:

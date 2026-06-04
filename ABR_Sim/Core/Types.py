@@ -8,6 +8,13 @@ type NICType = Literal["Eth", "WiFi", "LTE", "5G"]
 
 
 @dataclass(frozen=True)
+class SimConfig:
+    segment_duration_s: float = 5.0
+    max_buffer_s: float = 30.0
+    initial_buffer_s: float = 0.0
+
+
+@dataclass(frozen=True)
 class ScenarioConfig:
     scenario_id: str
 

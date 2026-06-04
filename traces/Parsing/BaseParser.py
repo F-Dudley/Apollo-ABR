@@ -95,10 +95,7 @@ def get_throughput_stats(
 
     df = add_sample_durations(df)
 
-    if "throughput_mbps" in df.columns:
-        throughput_mbps = df["throughput_mbps"].to_numpy(dtype=float)
-    else:
-        throughput_mbps = df["throughput_bytes_per_s"].to_numpy(dtype=float) / 1e6
+    throughput_mbps = extract_throughput_mbps(df)
 
     durations = df["sample_duration_s"].to_numpy(dtype=float)
 
@@ -156,6 +153,16 @@ def get_throughput_stats(
     return stats
 
 
+def extract_throughput_mbps(df: pd.DataFrame) -> np.ndarray:
+    if "throughput_mbps" in df.columns:
+        return df["throughput_mbps"].to_numpy(dtype=float)
+
+    if "throughput_bytes_per_s" in df.columns:
+        return df["throughput_bytes_per_s"].to_numpy(dtype=float) * 8.0 / 1_000_000.0
+
+    raise ValueError("Unable to extract throughput from DataFrame")
+
+
 class TraceFileParser:
 
     def parse_file(
@@ -184,9 +191,7 @@ class TraceFileParser:
         if "throughput_mbps" in df.columns:
             throughput_mbps = df["throughput_mbps"].to_numpy(dtype=float)
         else:
-            throughput_mbps = (
-                df["throughput_bytes_per_s"].to_numpy(dtype=float) * 8.0 / 1_000_000.0
-            )
+            throughput_mbps = extract_throughput_mbps(df)
 
         durations = df["sample_duration_s"].to_numpy(dtype=float)
 

@@ -2,15 +2,17 @@ import os
 import argparse
 import pandas as pd
 import numpy as np
+import time
 from pathlib import Path
 from typing import Any
 from tqdm.auto import tqdm
 from collections import deque
+from functools import partial
 from dataclasses import dataclass, asdict, is_dataclass
 
 from ABR_Sim.Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
 from ABR_Sim.Core.Manifest import Manifest, ManifestEntry
-from ABR_Sim.Core.Types import ScenarioConfig, Transition
+from ABR_Sim.Core.Types import SimConfig, ScenarioConfig, Transition
 from ABR_Sim.Core.BufferManager import BufferManager
 
 from ABR_Sim.Policies import PolicyRegistry
@@ -93,6 +95,12 @@ def parse_args():
         help="Maximum number of scenarios to run.",
     )
     parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=1,
+        help="Size of chunks to process in parallel.",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Whether to print detailed logs during simulation.",
@@ -100,31 +108,28 @@ def parse_args():
     return parser.parse_args()
 
 
-def validate_manifest_entry(entry: ManifestEntry, output_directory: str) -> bool:
+def validate_manifest_entry(
+    entry: ManifestEntry, output_directory: str, verbose: bool = False
+) -> tuple[bool, str]:
     # Implement validation logic for the manifest entry
     # For example, check if the trace file exists, if the video name is valid, etc.
     if not os.path.exists(entry["trace_file"]):
-        print(f"Trace file '{entry['trace_file']}' does not exist.")
-        return False
+        if verbose:
+            print(f"Trace file '{entry['trace_file']}' does not exist.")
+        return False, ""
 
     # Validate File of "scenario_id.*" does not already exist in the output directory to avoid overwriting results
     scenario_output_path = os.path.join(
         output_directory, f"{entry['scenario_id']}.parquet"
     )
     if os.path.isfile(scenario_output_path):
-        print(
-            f"Output file for scenario '{entry['scenario_id']}' already exists at '{scenario_output_path}'."
-        )
-        return False
+        if verbose:
+            print(
+                f"Output file for scenario '{entry['scenario_id']}' already exists at '{scenario_output_path}'."
+            )
+        return False, entry["scenario_id"]
 
-    return True
-
-
-@dataclass(frozen=True)
-class SimConfig:
-    segment_duration_s: float = 5.0
-    max_buffer_s: float = 30.0
-    initial_buffer_s: float = 0.0
+    return True, entry["scenario_id"]
 
 
 def init_worker(segment_catalog_path: str):
@@ -132,46 +137,182 @@ def init_worker(segment_catalog_path: str):
     segment_catalog = StandardSegmentCatalog(segment_catalog_path)
 
 
-def flatten_value(value: Any, prefix: str) -> dict[str, Any]:
+def values_equal(a: Any, b: Any) -> bool:
+    if isinstance(a, np.generic):
+        a = a.item()
+
+    if isinstance(b, np.generic):
+        b = b.item()
+
+    if a is None or b is None:
+        return a is None and b is None
+
+    try:
+        if isinstance(a, float) and isinstance(b, float):
+            if np.isnan(a) and np.isnan(b):
+                return True
+
+        return bool(a == b)
+
+    except Exception:
+        return False
+
+
+def emit_leaf(
+    *,
+    flattened: dict[str, Any],
+    seen: dict[str, list[dict[str, Any]]],
+    raw_key: str,
+    full_key: str,
+    value: Any,
+) -> None:
+    """
+    Emits a flattened leaf while avoiding duplicated same-key/same-value fields.
+
+    Behaviour:
+        first raw_key occurrence:
+            emit as raw_key
+
+        repeated raw_key with same value:
+            skip
+
+        repeated raw_key with different value:
+            rename previous raw_key entry to its full_key
+            emit current entry as full_key
+    """
+    previous_items = seen.get(raw_key, [])
+
+    # If same raw key and same value already emitted, skip.
+    for item in previous_items:
+        if values_equal(item["value"], value):
+            return
+
+    # First time seeing this raw key: emit compact name.
+    if not previous_items:
+        flattened[raw_key] = value
+        seen[raw_key] = [
+            {
+                "flat_key": raw_key,
+                "full_key": full_key,
+                "value": value,
+            }
+        ]
+        return
+
+    # Conflict: same raw key, different value.
+    # Ensure previous compact entries are expanded.
+    for item in previous_items:
+        old_flat_key = item["flat_key"]
+        previous_full_key = item["full_key"]
+
+        if old_flat_key == raw_key:
+            flattened.pop(old_flat_key, None)
+            flattened[previous_full_key] = item["value"]
+            item["flat_key"] = previous_full_key
+
+    # Emit current conflicting value using full prefix.
+    flattened[full_key] = value
+    previous_items.append(
+        {
+            "flat_key": full_key,
+            "full_key": full_key,
+            "value": value,
+        }
+    )
+
+
+def summarise_sequence(value: Any, prefix: str) -> dict[str, Any]:
+    arr = np.asarray(value)
+
+    if arr.size == 0:
+        return {
+            f"{prefix}_len": 0,
+            f"{prefix}_min": None,
+            f"{prefix}_max": None,
+            f"{prefix}_mean": None,
+            f"{prefix}_delta": None,
+        }
+
+    if not np.issubdtype(arr.dtype, np.number):
+        return {
+            f"{prefix}_len": int(len(arr)),
+        }
+
+    return {
+        f"{prefix}_len": int(len(arr)),
+        f"{prefix}_min": float(np.min(arr)),
+        f"{prefix}_max": float(np.max(arr)),
+        f"{prefix}_mean": float(np.mean(arr)),
+        f"{prefix}_delta": float(arr[-1] - arr[0]) if arr.size > 1 else None,
+    }
+
+
+def flatten_value(
+    *,
+    value: Any,
+    prefix: str,
+    raw_key: str,
+    flattened: dict[str, Any],
+    seen: dict[str, list[dict[str, Any]]],
+) -> None:
     if is_dataclass(value):
         value = asdict(value)
 
     if isinstance(value, dict):
-        flat = {}
         for sub_key, sub_value in value.items():
-            if prefix:
-                new_prefix = f"{prefix}_{sub_key}"
-            else:
-                new_prefix = str(sub_key)
+            sub_key = str(sub_key)
+            full_key = f"{prefix}_{sub_key}" if prefix else sub_key
 
-            flat.update(flatten_value(sub_value, new_prefix))
+            flatten_value(
+                value=sub_value,
+                prefix=full_key,
+                raw_key=sub_key,
+                flattened=flattened,
+                seen=seen,
+            )
 
-        return flat
+        return
 
-    elif isinstance(value, (list, tuple, deque, np.ndarray)):
-        value = np.array(value)
+    if isinstance(value, (list, tuple, deque, np.ndarray)):
+        summary = summarise_sequence(value, prefix)
 
-        return {
-            f"{prefix}_len": len(value),
-            f"{prefix}_min": np.min(value) if value.size else None,
-            f"{prefix}_max": np.max(value) if value.size else None,
-            f"{prefix}_mean": np.mean(value) if value.size else None,
-            f"{prefix}_delta": (value[-1] - value[0]) if value.size > 1 else None,
-        }
+        for summary_key, summary_value in summary.items():
+            summary_suffix = summary_key.removeprefix(f"{prefix}_")
 
-    else:
-        return {prefix: value}
+            emit_leaf(
+                flattened=flattened,
+                seen=seen,
+                raw_key=f"{raw_key}_{summary_suffix}",
+                full_key=summary_key,
+                value=summary_value,
+            )
+
+        return
+
+    emit_leaf(
+        flattened=flattened,
+        seen=seen,
+        raw_key=raw_key,
+        full_key=prefix,
+        value=value,
+    )
 
 
 def flatten_dataclass(instance) -> dict[str, Any]:
     if not is_dataclass(instance):
         raise ValueError("Provided instance is not a dataclass.")
 
-    flattened = {}
+    flattened: dict[str, Any] = {}
+    seen: dict[str, list[dict[str, Any]]] = {}
 
-    # Flatten Nested Values (dataclasses, lists, dicts)
     for key, value in asdict(instance).items():
-        flattened.update(flatten_value(value, key))
+        flatten_value(
+            value=value,
+            prefix=str(key),
+            raw_key=str(key),
+            flattened=flattened,
+            seen=seen,
+        )
 
     return flattened
 
@@ -193,6 +334,7 @@ def validate_transition_table(df: pd.DataFrame, config: ScenarioConfig) -> None:
         "buffer_s_next",
         "throughput_bytes_per_s",
         "used_energy_ret",
+        "decoding_time_s",
     ]
 
     # missing = [col for col in required if col not in df.columns]
@@ -241,7 +383,10 @@ def run_simulation(
     sim_config: SimConfig = SimConfig(),
 ) -> dict[str, Any]:
 
+
+
     global segment_catalog
+    start_time = time.perf_counter()
 
     scenario_config = ScenarioConfig(
         scenario_id=permutation["scenario_id"],
@@ -258,7 +403,7 @@ def run_simulation(
     trace_provider = StandardTraceProvider(permutation["trace_file"], allow_loop=True)
 
     policy = PolicyRegistry.create_policy(
-        permutation["policy"], seed=scenario_config.scenario_id
+        permutation["policy"], sim_config=sim_config, seed=scenario_config.scenario_id
     )
 
     # Create Buffer Manager
@@ -311,8 +456,11 @@ def run_simulation(
             "scenario_id": scenario_config.scenario_id,
             "status": "success",
             "output_path": output_path,
+            "elapsed_time_s": time.perf_counter() - start_time,
             "num_transitions": len(transitions),
-            "error": None,
+            "error_type": None,
+            "error_message": None,
+            "traceback": None,
         }
 
     except Exception as e:
@@ -320,10 +468,11 @@ def run_simulation(
             "scenario_id": scenario_config.scenario_id,
             "status": "failure",
             "output_path": None,
+            "elapsed_time_s": time.perf_counter() - start_time,
             "num_transitions": 0,
             "error_type": type(e).__name__,
             "error_message": str(e),
-            "traceback": traceback.format_exc(),
+            "traceback": traceback.format_exc().replace("\n", " "),
         }
 
 
@@ -372,25 +521,38 @@ def main():
         print(f"Limiting to first {args.max_scenarios} scenarios for testing.")
         manifest = list(manifest)[: args.max_scenarios]
 
+    worker_fn = partial(
+        validate_manifest_entry,
+        output_directory=args.output_directory,
+        verbose=args.verbose,
+    )
+
     with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-        results = executor.map(
-            lambda entry: validate_manifest_entry(entry, args.output_directory),
-            manifest,
-            chunksize=1000,
-        )
+        scenario_entries = set()
+        for requires_run, scenario_id in tqdm(
+            executor.map(worker_fn, manifest, chunksize=args.chunk_size),
+            total=len(manifest),
+            desc="Validating Scenarios",
+        ):
+            if requires_run:
+                scenario_entries.add(scenario_id)
 
-        scenario_entries = [
-            entry
-            for entry in tqdm(results, total=len(manifest), desc="Validating scenarios")
-            if entry is not None
-        ]
-
-    assert any(
-        scenario_entries
-    ), "Non-Valid Scenarios found. Please check the manifest and output directory for issues."
+    if len(scenario_entries) == 0:
+        print("No valid scenarios to run. Exiting.")
+        return
 
     if args.verbose:
         print(f"Total valid scenarios to run: {len(scenario_entries)}")
+
+    filtered_manifest = [
+        entry for entry in manifest if entry["scenario_id"] in scenario_entries
+    ]
+
+    worker_fn = partial(
+        run_simulation,
+        output_directory=args.output_directory,
+        sim_config=sim_config,
+    )
 
     with ProcessPoolExecutor(
         max_workers=args.max_workers,
@@ -398,26 +560,21 @@ def main():
         initargs=(args.segment_catalog,),
     ) as executor:
 
-        futures = [
-            executor.submit(
-                run_simulation, permutation, args.output_directory, sim_config
-            )
-            for permutation in manifest
-        ]
-
         results = []
-        for future in tqdm(
-            as_completed(futures), total=len(futures), desc="Simulations"
+        for result in tqdm(
+            executor.map(worker_fn, filtered_manifest, chunksize=args.chunk_size),
+            total=len(filtered_manifest),
+            desc="Simulations",
+            smoothing=0.05,
+            mininterval=1.0,
         ):
             try:
-                result = future.result()
                 results.append(result)
             except Exception as e:
                 print(f"Simulation failed with error: {e}")
 
-    summary_path = os.path.join(args.output_directory, "run_summary.csv")
-    pd.DataFrame(results).to_csv(summary_path, index=False)
-    print(f"Simulation run summary saved to '{summary_path}'.")
+    pd.DataFrame(results).to_csv("run_summary.csv", index=False)
+    print(f"Simulation run summary saved to '{os.path.abspath('run_summary.csv')}'.")
 
 
 if __name__ == "__main__":

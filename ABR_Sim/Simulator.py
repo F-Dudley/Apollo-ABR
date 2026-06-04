@@ -143,6 +143,7 @@ class ABRSimulator:
             "buffer_s_next": post_buffer_info.buffer_s_next,
             # Timing Info
             "total_time_used_s": post_buffer_info.total_time_used_s,
+            "decoding_time_s": segment_info.get("decoding_duration_s", 0.0),
             "expected_download_time_s": (
                 segment_size_bytes / max(np.mean(throughput_traces_bytes_per_s), 1.0)
             ),

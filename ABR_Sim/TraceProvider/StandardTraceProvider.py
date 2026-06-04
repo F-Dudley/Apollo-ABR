@@ -55,7 +55,10 @@ class StandardTraceProvider(TraceProvider):
             throughput = row["throughput_bytes_per_s"]
             throughputs_bytes_per_s.append(throughput)
 
-            time_needed_s = remaining_bytes / throughput
+            if throughput >= 1e-9:
+                time_needed_s = remaining_bytes / throughput
+            else:
+                time_needed_s = float("inf")
 
             used_time_s = min(
                 1.0, time_needed_s

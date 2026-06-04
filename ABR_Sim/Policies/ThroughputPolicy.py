@@ -1,6 +1,6 @@
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action
+from ..Core.Types import SimConfig, Action
 
 import numpy as np
 
@@ -10,14 +10,14 @@ class ThroughputPolicy(ABRPolicy):
 
     name = "Throughput"
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, sim_config: SimConfig, seed: int | None = None):
+        super().__init__(simconfig=sim_config, seed=seed)
 
         self.history_size = 5
         self.safety_factor = 0.9
 
     def select_action(self, state_t, ladder) -> Action:
-        if state_t.last_action is None:
+        if state_t.last_actions is None or len(state_t.last_actions) == 0:
             best_idx = 0
         else:
             estimated_bytes_per_second = self._harmonic_mean(
@@ -27,12 +27,12 @@ class ThroughputPolicy(ABRPolicy):
             estimated_bytes_per_second *= self.safety_factor
 
             best_idx = 0
-            for entry in ladder:
+            for idx, entry in enumerate(ladder):
 
                 bitrate_bytes_per_second = entry["bitrate_kbps"] * 1000
 
                 if bitrate_bytes_per_second <= estimated_bytes_per_second:
-                    best_idx += 1
+                    best_idx = idx
                 else:
                     break
 

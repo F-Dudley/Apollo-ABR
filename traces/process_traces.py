@@ -56,69 +56,6 @@ def shuffle_traces(trace_files: list[Path], seed: int = 42) -> list[Path]:
     return shuffled_files
 
 
-def process_traces(
-    trace_dir: str,
-    output_dir: str,
-    args: argparse.Namespace,
-    train_test_split: float = 0.8,
-    random_seed: int = 42,
-) -> None:
-
-    summary_data = []
-
-    # Loop over all Directories in "trace_dir", as they represent different trace sources (e.g. "fcc", "huawei", "synthetic", etc.)
-
-    trace_path = Path(trace_dir)
-
-    np.random.seed(random_seed)
-
-    trace_files = [f for f in trace_path.glob("**/*") if f.is_file()]
-
-    print(f"Found {len(trace_files)} trace files in {trace_dir}")
-    for trace_file in tqdm(trace_files, desc="Processing Trace Files"):
-        relative_path = trace_file.relative_to(trace_dir)
-        output_file_dir = Path(output_dir) / relative_path.parent
-        output_file_dir.mkdir(parents=True, exist_ok=True)
-
-        # Load Raw Trace
-        df = load_raw_trace(trace_file)
-
-        trace_id = hash_name(str(relative_path))
-
-        df.insert(0, "trace_id", trace_id)
-
-        # Normalize timestamps to start from 0
-        df["timestamp_s"] = df["timestamp_s"] - df["timestamp_s"].min()
-
-        # Convert throughput from Mbps to bytes per second
-        df["throughput_bytes_per_s"] = df["throughput_mbps"] * 125000
-
-        summary_data.append(
-            {
-                "trace_id": trace_id,
-                "original_file": str(trace_file),
-                "duration_s": df["timestamp_s"].max(),
-                **get_throughput_stats(
-                    df,
-                    bitrate_ladder_mbps=args.ladder_bitrates_mbps,
-                    segment_duration_s=args.segment_duration_s,
-                    max_download_duration_s=args.max_download_duration_s,
-                ),
-            }
-        )
-
-        df.drop(columns=["throughput_mbps"], inplace=True)
-
-        df.sort_values(by="timestamp_s", inplace=True)
-
-        # Save Processed Trace
-        df.to_parquet(output_file_dir / f"{trace_id}.parquet", index=False)
-
-    # Save Summary CSV
-    summary_df = pd.DataFrame(summary_data)
-    summary_df.to_csv(os.path.join(output_dir, "trace_summary.csv"), index=False)
-
-
 if __name__ == "__main__":
 
     args = parse_args()
