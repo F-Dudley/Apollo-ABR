@@ -23,11 +23,8 @@ class StandardSegmentCatalog(SegmentCatalog):
             )
         return len(filtered["segment_number"].unique())
 
-    def get_video_amount(self) -> list[str]:
-        return self._catalog["video_name"].unique().tolist()
-
-    def get_codec_amount(self) -> list[str]:
-        return self._catalog["codec"].unique().tolist()
+    def get_uniques(self, column: str) -> list[str]:
+        return self._catalog[column].unique()
 
     def get_ladder(
         self, video_name: str, codec: str, segment_number: int
@@ -51,9 +48,26 @@ class StandardSegmentCatalog(SegmentCatalog):
                 vmaf=row["vmaf"],
                 segment_size_bytes=row["encoded_segment_size_bytes"],
             )
+
+            # Possible General Values
+            entry.update(
+                {
+                    "encoding_duration_s": row.get("encoding_duration_s", 0.0),
+                    "decoding_duration_s": row.get("decoding_duration_s", 0.0),
+                }
+            )
+
+            # Energy Values (if available) - These are optional and may not be present in all catalogs, so we provide default values if they are missing.
+            entry.update(
+                {
+                    "used_energy_encstore_j": row.get("used_energy_encstore_j", 0.0),
+                    "used_energy_decoding_j": row.get("used_energy_decoding_j", 0.0),
+                    "used_energy_display_j": row.get("used_energy_display_j", 0.0),
+                }
+            )
             entries.append(entry)
 
-        return BitrateLadder(segment_number=segment_number, entries=entries)
+        return BitrateLadder(entries=entries)
 
     def _load_catalog(
         self, catalog_path: str, required_length: int | None = None

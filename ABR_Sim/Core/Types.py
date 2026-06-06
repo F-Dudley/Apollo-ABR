@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict, overload
 from collections import deque
 
 type NICType = Literal["Eth", "WiFi", "LTE", "5G"]
+
+
+@dataclass(frozen=True)
+class SimConfig:
+    segment_duration_s: float = 5.0
+    max_buffer_s: float = 30.0
+    initial_buffer_s: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -74,7 +81,8 @@ class BitrateLadderEntry(TypedDict):
     segment_size_bytes: int
 
 
-class BitrateLadder(TypedDict):
+@dataclass
+class BitrateLadder:
     entries: list[BitrateLadderEntry]
 
     def __len__(self) -> int:
@@ -83,10 +91,12 @@ class BitrateLadder(TypedDict):
     def __iter__(self) -> iter[BitrateLadderEntry]:
         return iter(self.entries)
 
-    def get_entry(self, bitrate_index: int) -> BitrateLadderEntry:
-        if bitrate_index < 0 or bitrate_index >= len(self.entries):
-            raise ValueError(
-                f"Invalid bitrate index {bitrate_index} for segment {self.segment_number}. Valid range is [0, {len(self.entries) - 1}]."
-            )
+    def __getitem__(self, index: int) -> BitrateLadderEntry:
+        return self.entries[index]
 
-        return self.entries[bitrate_index]
+    def get_entry(self, index: int) -> BitrateLadderEntry:
+        if index < 0 or index >= len(self.entries):
+            raise IndexError(
+                f"Bitrate index {index} out of range for ladder of size {len(self.entries)}"
+            )
+        return self.entries[index]

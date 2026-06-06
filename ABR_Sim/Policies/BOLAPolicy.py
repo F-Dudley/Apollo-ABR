@@ -1,19 +1,19 @@
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action, BitrateLadderEntry
+from ..Core.Types import SimConfig, Action, BitrateLadderEntry
 
 
 @ABRPolicyClass(name="BOLA")
 class BOLAPolicy(ABRPolicy):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, sim_config: SimConfig, seed: int | None = None):
+        super().__init__(simconfig=sim_config, seed=seed)
 
-        self.v_quality = 20.0
-        self.gamma = 0.1
+        self.v_quality = 15.0
+        self.gamma = 0.15
 
     def select_action(self, state_t, ladder) -> Action:
-        if state_t.last_action is None:
+        if state_t.last_actions is None or len(state_t.last_actions) == 0:
             best_idx = 0
         else:
 
@@ -24,7 +24,7 @@ class BOLAPolicy(ABRPolicy):
             for idx in range(len(ladder)):
                 entry = ladder.get_entry(idx)
                 cost = self._bola_cost(
-                    quality=entry["vmaf"],
+                    vmaf=entry["vmaf"],
                     segment_size_bytes=entry["segment_size_bytes"],
                     segment_duration_s=segment_duration_s,
                     buffer_s=state_t.buffer_s,

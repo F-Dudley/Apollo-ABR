@@ -9,18 +9,18 @@ from pathlib import Path
 from hashlib import blake2b
 
 
-def collect_trace_files(trace_directory: str, nic_type: str) -> list[str]:
+def collect_trace_files(
+    trace_directory: str,
+) -> list[str]:
     # Defined as Root -> NetworkType -> TraceFiles
     trace_files = []
 
-    nic_directory = os.path.join(os.path.abspath(trace_directory), nic_type.lower())
+    path_dir = Path(trace_directory)
+    for trace_file in path_dir.glob("*.parquet"):
+        if trace_file.is_file():
+            trace_files.append(trace_file.resolve().as_posix())
 
-    if not os.path.exists(nic_directory):
-        raise FileNotFoundError(f"NIC directory '{nic_directory}' does not exist.")
-
-    path_dir = Path(nic_directory)
-    for trace_file in path_dir.glob("*.csv"):
-        trace_files.append(trace_file.resolve().as_posix())
+    return trace_files
 
 
 def generate_id(*args, digest_size: int = 64) -> str:
@@ -47,7 +47,14 @@ class Manifest:
         codecs: list[str],
         networks: list[str] = ["Eth", "LTE"],
         policies: list[str] = ["Random", "RandomWalk", "Throughput", "BOLA", "WISH"],
-        permutation_columns: list[str] = ["video_name", "codec", "network", "policy"],
+        permutation_columns: list[str] = [
+            "video_name",
+            "codec",
+            "network",
+            "policy",
+            "network",
+            "trace_file",
+        ],
         trace_directory: str = "./traces",
         fresh_manifest: bool = False,
     ):
@@ -70,9 +77,13 @@ class Manifest:
 
         permutations = []
 
-        for network in self.networks:
+        trace_files = collect_trace_files(self.trace_directory)
 
-            trace_files = collect_trace_files(self.trace_directory, network)
+        assert (
+            trace_files is not None and len(trace_files) > 0
+        ), f"No trace files found in directory '{self.trace_directory}'. Please ensure it contains valid .parquet trace files."
+
+        for network in self.networks:
 
             permutations.extend(
                 [
@@ -121,3 +132,6 @@ class Manifest:
     def __iter__(self) -> Generator[ManifestEntry, None, None]:
         for _, row in self._manifest.iterrows():
             yield row.to_dict()
+
+    def __len__(self) -> int:
+        return len(self._manifest)

@@ -15,21 +15,18 @@ class TransitionCollector:
         self.show_progress = show_progress
         self.progress_desc = progress_desc
 
-        if not self.simulator.initialized:
-            self.simulator.init()
-
     def run(self) -> tuple[list[Transition], list[str]]:
         self.simulator.reset()
 
         transitions: list[Transition] = []
 
-        iterator = range(self.simulator.total_segments)
+        iterator = range(self.simulator.num_segments())  # type: ignore
 
         if self.show_progress:
             iterator = tqdm(
                 iterator,
                 desc=self.progress_desc or "Simulating ABR Transitions",
-                total=self.simulator.num_segments(),
+                total=self.simulator.total_segments,
                 unit="Segment",
                 leave=False,
             )

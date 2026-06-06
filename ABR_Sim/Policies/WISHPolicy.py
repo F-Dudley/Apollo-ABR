@@ -1,7 +1,7 @@
 from . import ABRPolicyClass
 
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import Action, BitrateLadder, BitrateLadderEntry
+from ..Core.Types import SimConfig, Action, BitrateLadder, BitrateLadderEntry
 
 
 import numpy as np
@@ -9,17 +9,20 @@ import numpy as np
 
 @ABRPolicyClass(name="WISH")
 class WISHPolicy(ABRPolicy):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, sim_config: SimConfig, seed: int | None = None):
+        super().__init__(simconfig=sim_config, seed=seed)
 
-        self.low_buffer_threshold_s = 5.0
+        self.low_buffer_threshold_s = sim_config.initial_buffer_s
+        self.max_buffer_s = sim_config.max_buffer_s
+        self.segment_duration_s = sim_config.segment_duration_s
+        self.history_quality_len = 5
 
         self.omega = 1.0 / 8.0
         self.mu = 0.1
         self.xi = 0.8
         self.delta = 1.0
 
-        self.smoothed_throughput_bytes_per_second = None
+        self.smoothed_throughput_bytes_per_s = None
 
     def select_action(self, state_t, ladder) -> Action:
 
@@ -28,21 +31,21 @@ class WISHPolicy(ABRPolicy):
         if buffer_s < self.low_buffer_threshold_s:
             return self._make_action(ladder, bitrate_index=0)
 
-        if len(state_t.last_throughputs_kbps) == 0:
+        if len(state_t.last_throughputs_bytes_per_s) == 0:
             return self._make_action(ladder, bitrate_index=0)
         else:
-            last_throughput = state_t.last_throughputs_kbps[-1]
-            smoothed_throughput_bytes_per_s = last_throughput * 1000
+            last_throughput_bytes_per_s = state_t.last_throughputs_bytes_per_s[-1]
 
-        if self.smoothed_throughput_bytes_per_second is None:
-            self.smoothed_throughput_bytes_per_second = smoothed_throughput_bytes_per_s
+        if self.smoothed_throughput_bytes_per_s is None:
+            self.smoothed_throughput_bytes_per_s = last_throughput_bytes_per_s
         else:
             self.smoothed_throughput_bytes_per_s = (
-                1.0 - self.omega
-            ) * self.smoothed_throughput_bytes_per_s + self.omega * last_throughput
+                (1.0 - self.omega) * self.smoothed_throughput_bytes_per_s
+                + self.omega * last_throughput_bytes_per_s
+            )
 
         estim_throughput_bytes_per_s = min(
-            self.smoothed_throughput_bytes_per_s, smoothed_throughput_bytes_per_s
+            self.smoothed_throughput_bytes_per_s, last_throughput_bytes_per_s
         )
 
         alpha, beta, gamma = self._compute_weights(state_t, ladder)
@@ -53,7 +56,7 @@ class WISHPolicy(ABRPolicy):
 
         max_candidate_idx = self._max_candidate_index(
             ladder=ladder,
-            last_throughput_bytes_per_s=smoothed_throughput_bytes_per_s,
+            last_throughput_bytes_per_s=last_throughput_bytes_per_s,
             start_idx=start_idx,
         )
 
@@ -105,7 +108,50 @@ class WISHPolicy(ABRPolicy):
 
         return max_idx
 
-    def _compute_weights(self, state_t, ladder) -> tuple[float, float, float]:
+    def _bitrate_bytes_per_s(self, entry) -> float:
+        """
+        Convert ladder bitrate from kbps to bytes/s.
+
+        bitrate_kbps is kilobits per second:
+            kbps * 1000 = bits/s
+            bits/s / 8 = bytes/s
+        """
+        bitrate_kbps = float(self._get(entry, "bitrate_kbps", 0.0))
+        return bitrate_kbps * 1000.0 / 8.0
+
+    def _segment_size_bytes(self, entry) -> float:
+        """
+        Prefer measured/catalogued encoded segment size.
+        Fallback to bitrate * segment duration.
+        """
+        for key in [
+            "segment_size_bytes",
+            "encoded_segment_size_bytes",
+            "encoded_segment_size",
+        ]:
+            value = self._get(entry, key, None)
+
+            if value is not None:
+                return float(value)
+
+        return self._bitrate_bytes_per_s(entry) * self.segment_duration_s
+
+    def _quality_cost(self, entry, ladder, q_recent: float) -> float:
+        """
+        Quality penalty.
+
+        q(i) is bitrate-normalised quality in [0, 1].
+        Lower cost is better.
+
+        This keeps the cost positive and penalises actions below recent quality.
+        """
+        q_i = self._quality(entry, ladder)
+
+        return float(np.exp(q_recent - q_i))
+
+    def _compute_weights(
+        self, state_t, ladder: BitrateLadder
+    ) -> tuple[float, float, float]:
         """
         WISH weight calculation.
 
@@ -131,10 +177,10 @@ class WISHPolicy(ABRPolicy):
         else:
             q_threshold = q_1
 
-        delta = 1.0
+        delta = max(float(self.delta), 1e-9)
 
         buffer_term = (
-            self.xi * self.max_buffer_s - self.buffer_low_s
+            self.xi * self.max_buffer_s - self.low_buffer_threshold_s
         ) / self.segment_duration_s
 
         exp_term = np.exp(3.0 - 2.0 * q_1 - q_threshold) / delta
@@ -164,7 +210,7 @@ class WISHPolicy(ABRPolicy):
 
         c_t = bitrate_bytes_per_s / estimated_throughput
 
-        safe_buffer_s = max(buffer_s - self.buffer_low_s, 1e-9)
+        safe_buffer_s = max(buffer_s - self.low_buffer_threshold_s, 1e-9)
         estimated_download_time_s = segment_size_bytes / estimated_throughput
         c_b = estimated_download_time_s / safe_buffer_s
 
@@ -177,7 +223,7 @@ class WISHPolicy(ABRPolicy):
 
         return alpha * c_t + beta * c_b + gamma * c_q
 
-    def _recent_quality_average(self, state_t, ladder) -> float:
+    def _recent_quality_average(self, state_t, ladder: BitrateLadder) -> float:
         """
         Q_k = average quality of recent selected representations.
 

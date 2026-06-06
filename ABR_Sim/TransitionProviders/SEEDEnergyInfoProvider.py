@@ -37,9 +37,9 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
 
         throughputs_kbps = np.asarray(info_t.get("throughput_bytes_per_s", [])) / 1000.0
 
-        used_energy_encstore_j = segment.get("used_energy_encstore", 0.0)
-        used_energy_decoding_j = segment.get("used_energy_decoding", 0.0)
-        used_energy_display_j = segment.get("used_energy_display", 0.0)
+        used_energy_encstore_j = segment.get("used_energy_encstore_j", 0.0)
+        used_energy_decoding_j = segment.get("used_energy_decoding_j", 0.0)
+        used_energy_display_j = segment.get("used_energy_display_j", 0.0)
 
         used_energy_ret_j = 0.0
         idle_energy_j = 0.0
@@ -67,11 +67,11 @@ class SEEDEnergyInfoProvider(TransitionInfoProvider):
                 )
 
         return {
-            "used_energy_ret": used_energy_ret_j,
-            "used_energy_encstore": used_energy_encstore_j,
-            "used_energy_decoding": used_energy_decoding_j,
-            "used_energy_display": used_energy_display_j,
-            "idle_energy": idle_energy_j,
+            "used_energy_ret_j": used_energy_ret_j,
+            "used_energy_encstore_j": used_energy_encstore_j,
+            "used_energy_decoding_j": used_energy_decoding_j,
+            "used_energy_display_j": used_energy_display_j,
+            "idle_energy_j": idle_energy_j,
         }
 
     def _energy_estimate_eth(
