@@ -243,7 +243,7 @@ def summarise_sequence(value: Any, prefix: str) -> dict[str, Any]:
         f"{prefix}_min": float(np.min(arr)),
         f"{prefix}_max": float(np.max(arr)),
         f"{prefix}_mean": float(np.mean(arr)),
-        f"{prefix}_delta": float(arr[-1] - arr[0]) if arr.size > 1 else None,
+        f"{prefix}_delta": float(arr[-1] - arr[0]) if arr.size > 1 else 0.0,
     }
 
 
@@ -382,8 +382,6 @@ def run_simulation(
     output_directory: str = "./results",
     sim_config: SimConfig = SimConfig(),
 ) -> dict[str, Any]:
-
-
 
     global segment_catalog
     start_time = time.perf_counter()

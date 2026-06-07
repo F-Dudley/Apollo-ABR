@@ -2,21 +2,33 @@ import os
 import argparse
 from pathlib import Path
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 import numpy as np
 from tqdm.auto import tqdm
 from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
+import traceback
+
+DROP_COLUMNS_EXACT = {
+    "done",
+}
+
+DROP_COLUMNS_SUFFIX = {
+    "_done",
+}
+
 
 @dataclass
 class WindowShard:
     shard_id: int
-    estimated_sizes_gb: list[float] = field(default_factory=list)
+    estimated_size_gb: float = 0.0
     transition_files: list[Path] = field(default_factory=list)
 
-    @property
-    def estimated_size_gb(self) -> float:
-        return np.sum(self.estimated_sizes_gb)
-
+    def add_file(self, file_path: Path, estimated_size_gb: float):
+        self.transition_files.append(file_path)
+        self.estimated_size_gb += estimated_size_gb
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,71 +48,153 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max_shard_size",
         type=int,
-        default=40,
-        help="Maximum Estimated Size (in GB) for each output shard."
+        default=4,
+        help="Maximum Estimated Size (in GB) for each output shard.",
     )
     parser.add_argument(
         "--window_context_size",
         type=int,
         default=4,
-        help="Number of transitions to include in the context of each temporal window."
+        help="Number of transitions to include in the context of each temporal window.",
     )
     parser.add_argument(
         "--window_target_size",
         type=int,
         default=1,
-        help="Number of transitions to include in the target of each temporal window."
+        help="Number of transitions to include in the target of each temporal window.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Number of worker threads to use for estimating file sizes.",
+    )
+    parser.add_argument(
+        "--buffer_rows_threshold",
+        type=int,
+        default=250_000,
+        help="Number of rows to buffer in memory before writing to disk.",
+    )
+    parser.add_argument(
+        "--report_nans",
+        action="store_true",
+        help="Whether to report if found during processing.",
     )
     return parser.parse_args()
 
-def estimate_file_size_gb(num_windows: int, window_size: int, avg_transition_size_kb: float = 4.0) -> float:
-    """
-    Estimate the file size in GB based on the number of transitions and average size per transition in KB.
-    """
 
-    window_size_kb = window_size * avg_transition_size_kb
-    total_size_kb = num_windows * window_size_kb
-    total_size_gb = total_size_kb / 1e+6
+def load_transition_file(file_path: Path) -> pd.DataFrame:
+    if file_path.suffix.lower() == ".csv":
+        return pd.read_csv(file_path)
+    elif file_path.suffix.lower() == ".parquet":
+        return pd.read_parquet(file_path)
+    else:
+        raise ValueError(f"Unsupported file format: {file_path.suffix}")
 
-    return total_size_gb
 
-def get_transition_count(file_path: Path) -> int:
-    match file_path.suffix.lower():
-        case ".csv":
-            df = pd.read_csv(file_path, usecols=["scenario_id"])
-            return len(df)
-        
-        case ".parquet":
-            parquet_file = pq.ParquetFile(file_path)
-            return int( parquet_file.metadata.num_rows)
-        
-        case _:
-            raise ValueError(f"Unsupported file format for transition count: {file_path.suffix}")
+def drop_unused_columns(df: pd.DataFrame) -> pd.DataFrame:
+    columns_to_drop = [
+        col
+        for col in df.columns
+        if col in DROP_COLUMNS_EXACT
+        or any(col.endswith(suffix) for suffix in DROP_COLUMNS_SUFFIX)
+    ]
 
-def shard_transition_files(transition_directory: Path, temporal_window_size: int, max_shard_size_gb: float) -> list[WindowShard]:
+    if columns_to_drop:
+        df = df.drop(columns=columns_to_drop)
 
-    transition_files = sorted(transition_directory.glob("*.*"))
+    return df
+
+
+def estimate_file_size_gb(file_path: Path, temporal_window_size: int) -> float:
+    file_size_bytes = os.path.getsize(file_path)
+    return (file_size_bytes * temporal_window_size) / 1e9
+
+
+def discover_transition_files(transition_directory: Path) -> list[Path]:
+    valid_files = [
+        f
+        for f in transition_directory.glob("*")
+        if f.suffix.lower() in {".csv", ".parquet"}
+    ]
+
+    if not valid_files:
+        raise ValueError(
+            f"No valid CSV or Parquet files found in directory: {transition_directory}"
+        )
+
+    return valid_files
+
+
+def estimate_file_size_threaded(
+    transition_files: list[Path], temporal_window_size: int, workers: int
+) -> list[tuple[Path, float]]:
+    def estimate_size(file_path: Path) -> tuple[Path, float]:
+        estimated_size_gb = estimate_file_size_gb(
+            file_path=file_path,
+            temporal_window_size=temporal_window_size,
+        )
+
+        return file_path, estimated_size_gb
+
+    estimated_sizes: list[tuple[Path, float]] = []
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(estimate_size, transition_file)
+            for transition_file in transition_files
+        ]
+
+        for future in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Estimating file sizes...",
+        ):
+            try:
+                estimated_sizes.append(future.result())
+            except Exception as e:
+                print(f"Error estimating size for a file: {e}")
+
+    # Restore deterministic order after threaded completion.
+    estimated_sizes.sort(key=lambda item: item[0].as_posix())
+
+    return estimated_sizes
+
+
+def shard_transition_files(
+    transition_directory: Path,
+    temporal_window_size: int,
+    max_shard_size_gb: float,
+    workers: int,
+) -> list[WindowShard]:
+
+    transition_files = discover_transition_files(transition_directory)
+
+    transition_size_estimates = estimate_file_size_threaded(
+        transition_files, temporal_window_size, workers
+    )
 
     shards: list[WindowShard] = []
     current_shard: WindowShard = WindowShard(shard_id=0, transition_files=[])
 
-    for transition_file in tqdm(transition_files, desc="Sharding transition files..."):
-        if transition_file.suffix.lower() not in [".csv", ".parquet"]:
-            print(f"Skipping non-CSV/Parquet file: {transition_file}")
-            continue
+    for transition_file, estimated_size in tqdm(
+        transition_size_estimates, desc="Sharding transition files..."
+    ):
 
-        num_transitions = get_transition_count(transition_file)
-        estimated_expanded_size_gb = estimate_file_size_gb(num_transitions, temporal_window_size)
+        would_exceed_shard = (
+            current_shard.estimated_size_gb + estimated_size > max_shard_size_gb
+        )
 
-        current_shard_size_gb = current_shard.estimated_size_gb
-
-        if current_shard_size_gb + estimated_expanded_size_gb > max_shard_size_gb and current_shard.transition_files:
-            new_shard_idx = current_shard.shard_id + 1
+        if would_exceed_shard and current_shard.transition_files:
             shards.append(current_shard)
-            current_shard = WindowShard(shard_id=new_shard_idx, transition_files=[], estimated_sizes_gb=[])
 
-        current_shard.transition_files.append(transition_file)
-        current_shard.estimated_sizes_gb.append(estimated_expanded_size_gb)
+            current_shard = WindowShard(
+                shard_id=current_shard.shard_id + 1,
+                transition_files=[],
+                estimated_size_gb=0.0,
+            )
+
+        current_shard.add_file(transition_file, estimated_size)
 
     if current_shard.transition_files:
         shards.append(current_shard)
@@ -108,7 +202,190 @@ def shard_transition_files(transition_directory: Path, temporal_window_size: int
     return shards
 
 
-        
+def create_shard_windows(
+    shard: WindowShard,
+    window_context_size: int,
+    window_target_size: int,
+    output_dir: Path,
+    buffer_rows_threshold: int = 250_000,
+    report_nans: bool = False,
+) -> dict:
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    shard_path = output_dir / f"windows_{shard.shard_id:06d}.parquet"
+    # Delete existing file to avoid appending to old data.
+    shard_path.unlink(missing_ok=True)
+
+    full_window_size = window_context_size + window_target_size
+
+    writer: pq.ParquetWriter | None = None
+
+    total_rows = 0
+    buffered_windows = []
+    buffer_rows = 0
+
+    def write_buffered_windows():
+        nonlocal writer, total_rows, buffered_windows, buffer_rows
+
+        if not buffered_windows:
+            return
+
+        chunk_df = pd.concat(buffered_windows, ignore_index=True)
+        table = pa.Table.from_pandas(chunk_df, preserve_index=False)
+
+        if writer is None:
+            writer = pq.ParquetWriter(shard_path, table.schema, use_dictionary=True)
+
+        writer.write_table(table)
+
+        total_rows += len(chunk_df)
+        buffered_windows = []
+        buffer_rows = 0
+
+    try:
+        for transition_file in shard.transition_files:
+
+            df = load_transition_file(transition_file)
+            df = drop_unused_columns(df)
+
+            df = df.sort_values("step_t", kind="mergesort").reset_index(drop=True)
+
+            if len(df) < full_window_size:
+                print(
+                    f"Skipping file {transition_file} as it has fewer rows ({len(df)}) than the full window size ({full_window_size})."
+                )
+                continue
+
+            if df["step_t"].duplicated().any():
+                raise ValueError(
+                    f"Duplicate 'step_t' values found in file {transition_file}."
+                )
+
+            num_windows = len(df) - full_window_size + 1
+
+            window_idices = np.lib.stride_tricks.sliding_window_view(
+                np.arange(len(df), dtype=np.int64), window_shape=full_window_size
+            )
+
+            flat_indices = window_idices.reshape(-1)
+            window_idx = np.repeat(
+                np.arange(num_windows, dtype=np.int64), full_window_size
+            )
+            window_step_idx = np.tile(
+                np.arange(full_window_size, dtype=np.int64), num_windows
+            )
+
+            # Expanded DF
+            expanded_df = df.take(flat_indices).reset_index(drop=True).copy()
+
+            expanded_df["window_idx"] = window_idx
+            expanded_df["window_step_idx"] = window_step_idx
+            expanded_df["window_role"] = np.where(
+                window_step_idx < window_context_size, "context", "target"
+            )
+
+            expanded_df["rel_t"] = np.where(
+                window_step_idx < window_context_size,
+                window_step_idx - (window_context_size - 1),
+                window_step_idx - window_context_size + 1,
+            ).astype(np.int16)
+
+            step_values = df["step_t"].to_numpy()
+
+            expanded_df["anchor_step_t"] = np.repeat(
+                step_values[np.arange(num_windows) + window_context_size - 1],
+                full_window_size,
+            )
+
+            expanded_df["target_start_step_t"] = np.repeat(
+                step_values[np.arange(num_windows) + window_context_size],
+                full_window_size,
+            )
+            expanded_df["target_end_step_t"] = np.repeat(
+                step_values[
+                    np.arange(num_windows)
+                    + window_context_size
+                    + window_target_size
+                    - 1
+                ],
+                full_window_size,
+            )
+
+            expected_rows = num_windows * full_window_size
+
+            if len(expanded_df) != expected_rows:
+                raise ValueError(
+                    f"Expanded row mismatch in {transition_file}: "
+                    f"expanded={len(expanded_df)}, expected={expected_rows}"
+                )
+
+            if len(window_idx) != expected_rows:
+                raise ValueError(
+                    f"window_idx mismatch in {transition_file}: "
+                    f"window_idx={len(window_idx)}, expected={expected_rows}"
+                )
+
+            if len(window_step_idx) != expected_rows:
+                raise ValueError(
+                    f"window_step_idx mismatch in {transition_file}: "
+                    f"window_step_idx={len(window_step_idx)}, expected={expected_rows}"
+                )
+
+            counts = expanded_df.groupby(["scenario_id", "window_idx"]).size()
+            if not (counts == full_window_size).all():
+                raise ValueError(
+                    f"Bad window sizes in {transition_file}: "
+                    f"{counts.value_counts().to_dict()}"
+                )
+
+            if report_nans and expanded_df.isna().any().any():
+                print(
+                    f"Warning: NaN values found in expanded windows from file {transition_file}."
+                )
+
+            buffered_windows.append(expanded_df)
+            buffer_rows += len(expanded_df)
+
+            if buffer_rows >= buffer_rows_threshold:
+                write_buffered_windows()
+
+        if buffer_rows > 0:
+            write_buffered_windows()
+
+        return {
+            "shard_id": shard.shard_id,
+            "status": "success",
+            "num_transition_files": len(shard.transition_files),
+            "total_windows": total_rows,
+            "estimated_size_gb": shard.estimated_size_gb,
+            "actual_size_gb": (
+                shard_path.stat().st_size / 1e9 if shard_path.exists() else 0.0
+            ),
+            "output_path": shard_path.as_posix(),
+            "error": None,
+            "error_str": None,
+            "traceback": None,
+        }
+
+    except Exception as e:
+        return {
+            "shard_id": shard.shard_id,
+            "status": "error",
+            "num_transition_files": len(shard.transition_files),
+            "total_windows": total_rows,
+            "estimated_size_gb": shard.estimated_size_gb,
+            "actual_size_gb": 0.0,
+            "output_path": shard_path.as_posix(),
+            "error": type(e).__name__,
+            "error_str": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+    finally:
+        if writer is not None:
+            writer.close()
+
 
 def main():
 
@@ -120,18 +397,55 @@ def main():
     output_dir = Path(args.output_dir)
 
     if not input_dir.exists() or not input_dir.is_dir():
-        raise ValueError(f"Input directory '{input_dir}' does not exist or is not a directory.")
-    
+        raise ValueError(
+            f"Input directory '{input_dir}' does not exist or is not a directory."
+        )
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create Shards from Trasition Data, in an expanded Temporal Window State.
     transition_shards = shard_transition_files(
         transition_directory=input_dir,
         temporal_window_size=temporal_window_size,
-        max_shard_size_gb=args.max_shard_size
+        max_shard_size_gb=args.max_shard_size,
+        workers=args.workers,
     )
 
+    worker_fn = partial(
+        create_shard_windows,
+        window_context_size=args.window_context_size,
+        window_target_size=args.window_target_size,
+        output_dir=output_dir,
+        report_nans=args.report_nans,
+        buffer_rows_threshold=args.buffer_rows_threshold,
+    )
+
+    summaries = []
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = [executor.submit(worker_fn, shard) for shard in transition_shards]
+
+        for shard_summary in tqdm(
+            as_completed(futures),
+            total=len(transition_shards),
+            desc="Processing shards to create temporal windows...",
+        ):
+            try:
+                result = shard_summary.result()
+                summaries.append(result)
+            except Exception as e:
+                print(f"Error processing a shard: {e}")
+
+    summary_df = pd.DataFrame(summaries)
+    summary_df.to_csv("temporal_builder_summary.csv", index=False)
+
     print(f"Created {len(transition_shards)} shards from transition files.")
+    print("Shard details:")
+    for shard in transition_shards:
+        print(
+            f"  Shard {shard.shard_id}: {len(shard.transition_files)} files, Estimated Size: {shard.estimated_size_gb:.2f} GB"
+        )
+
 
 if __name__ == "__main__":
     main()
