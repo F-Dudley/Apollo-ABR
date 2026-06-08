@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max_shard_size",
         type=int,
-        default=4,
+        default=1,
         help="Maximum Estimated Size (in GB) for each output shard.",
     )
     parser.add_argument(
@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--window_target_size",
         type=int,
-        default=1,
+        default=2,
         help="Number of transitions to include in the target of each temporal window.",
     )
     parser.add_argument(
