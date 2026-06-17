@@ -120,7 +120,7 @@ def validate_manifest_entry(
 
     # Validate File of "scenario_id.*" does not already exist in the output directory to avoid overwriting results
     scenario_output_path = os.path.join(
-        output_directory, f"{entry['scenario_id']}.parquet"
+        output_directory, entry["target_split"], f"{entry['scenario_id']}.parquet"
     )
     if os.path.isfile(scenario_output_path):
         if verbose:
@@ -435,8 +435,11 @@ def run_simulation(
         os.makedirs(output_directory, exist_ok=True)
 
         output_path = os.path.join(
-            output_directory, f"{scenario_config.scenario_id}.parquet"
+            output_directory,
+            permutation["target_split"],
+            f"{scenario_config.scenario_id}.parquet",
         )
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         # Flatten Transitions into Dicts
 

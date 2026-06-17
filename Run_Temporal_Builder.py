@@ -23,6 +23,7 @@ DROP_COLUMNS_SUFFIX = {
 @dataclass
 class WindowShard:
     shard_id: int
+    output_subdir: str
     estimated_size_gb: float = 0.0
     transition_files: list[Path] = field(default_factory=list)
 
@@ -111,19 +112,29 @@ def estimate_file_size_gb(file_path: Path, temporal_window_size: int) -> float:
     return (file_size_bytes * temporal_window_size) / 1e9
 
 
-def discover_transition_files(transition_directory: Path) -> list[Path]:
-    valid_files = [
-        f
-        for f in transition_directory.glob("*")
-        if f.suffix.lower() in {".csv", ".parquet"}
-    ]
+def discover_transition_files(transition_directory: Path) -> dict[str, list[Path]]:
 
-    if not valid_files:
+    trace_files: dict[str, list[Path]] = {}
+
+    valid_suffixes = {".csv", ".parquet"}
+
+    for root_dir in Path(transition_directory).iterdir():
+        if not root_dir.is_dir():
+            continue
+
+        split_name = root_dir.name
+        trace_files[split_name] = []
+
+        for trace_file in root_dir.glob("*.parquet"):
+            if trace_file.is_file() and trace_file.suffix.lower() in valid_suffixes:
+                trace_files[split_name].append(trace_file.resolve())
+
+    if not trace_files:
         raise ValueError(
             f"No valid CSV or Parquet files found in directory: {transition_directory}"
         )
 
-    return valid_files
+    return trace_files
 
 
 def estimate_file_size_threaded(
@@ -170,34 +181,40 @@ def shard_transition_files(
 
     transition_files = discover_transition_files(transition_directory)
 
-    transition_size_estimates = estimate_file_size_threaded(
-        transition_files, temporal_window_size, workers
-    )
-
     shards: list[WindowShard] = []
-    current_shard: WindowShard = WindowShard(shard_id=0, transition_files=[])
 
-    for transition_file, estimated_size in tqdm(
-        transition_size_estimates, desc="Sharding transition files..."
-    ):
+    for target_split, files in transition_files.items():
 
-        would_exceed_shard = (
-            current_shard.estimated_size_gb + estimated_size > max_shard_size_gb
+        transition_size_estimates = estimate_file_size_threaded(
+            files, temporal_window_size, workers
         )
 
-        if would_exceed_shard and current_shard.transition_files:
-            shards.append(current_shard)
+        current_shard: WindowShard = WindowShard(
+            shard_id=0, transition_files=[], output_subdir=target_split
+        )
 
-            current_shard = WindowShard(
-                shard_id=current_shard.shard_id + 1,
-                transition_files=[],
-                estimated_size_gb=0.0,
+        for transition_file, estimated_size in tqdm(
+            transition_size_estimates, desc="Sharding transition files..."
+        ):
+
+            would_exceed_shard = (
+                current_shard.estimated_size_gb + estimated_size > max_shard_size_gb
             )
 
-        current_shard.add_file(transition_file, estimated_size)
+            if would_exceed_shard and current_shard.transition_files:
+                shards.append(current_shard)
 
-    if current_shard.transition_files:
-        shards.append(current_shard)
+                current_shard = WindowShard(
+                    shard_id=current_shard.shard_id + 1,
+                    output_subdir=target_split,
+                    transition_files=[],
+                    estimated_size_gb=0.0,
+                )
+
+            current_shard.add_file(transition_file, estimated_size)
+
+        if current_shard.transition_files:
+            shards.append(current_shard)
 
     return shards
 
@@ -211,10 +228,14 @@ def create_shard_windows(
     report_nans: bool = False,
 ) -> dict:
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    shard_path = (
+        output_dir
+        / shard.output_subdir
+        / f"{shard.output_subdir}_windows_{shard.shard_id:06d}.parquet"
+    )
 
-    shard_path = output_dir / f"windows_{shard.shard_id:06d}.parquet"
     # Delete existing file to avoid appending to old data.
+    shard_path.parent.mkdir(parents=True, exist_ok=True)
     shard_path.unlink(missing_ok=True)
 
     full_window_size = window_context_size + window_target_size
@@ -357,7 +378,7 @@ def create_shard_windows(
             "shard_id": shard.shard_id,
             "status": "success",
             "num_transition_files": len(shard.transition_files),
-            "total_windows": total_rows,
+            "total_windows": total_rows // full_window_size,
             "estimated_size_gb": shard.estimated_size_gb,
             "actual_size_gb": (
                 shard_path.stat().st_size / 1e9 if shard_path.exists() else 0.0
@@ -373,7 +394,7 @@ def create_shard_windows(
             "shard_id": shard.shard_id,
             "status": "error",
             "num_transition_files": len(shard.transition_files),
-            "total_windows": total_rows,
+            "total_windows": total_rows // full_window_size,
             "estimated_size_gb": shard.estimated_size_gb,
             "actual_size_gb": 0.0,
             "output_path": shard_path.as_posix(),
@@ -423,16 +444,13 @@ def main():
     summaries = []
 
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = [executor.submit(worker_fn, shard) for shard in transition_shards]
-
         for shard_summary in tqdm(
-            as_completed(futures),
+            executor.map(worker_fn, transition_shards),
             total=len(transition_shards),
             desc="Processing shards to create temporal windows...",
         ):
             try:
-                result = shard_summary.result()
-                summaries.append(result)
+                summaries.append(shard_summary)
             except Exception as e:
                 print(f"Error processing a shard: {e}")
 

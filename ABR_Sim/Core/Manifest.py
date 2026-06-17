@@ -11,14 +11,24 @@ from hashlib import blake2b
 
 def collect_trace_files(
     trace_directory: str,
-) -> list[str]:
-    # Defined as Root -> NetworkType -> TraceFiles
-    trace_files = []
+) -> dict[str, list[str]]:
+    # Defined as Root -> Split -> TraceFiles
+    trace_files = {}
 
-    path_dir = Path(trace_directory)
-    for trace_file in path_dir.glob("*.parquet"):
-        if trace_file.is_file():
-            trace_files.append(trace_file.resolve().as_posix())
+    for root_dir in Path(trace_directory).iterdir():
+        if not root_dir.is_dir():
+            continue
+
+        split_name = root_dir.name
+        trace_files[split_name] = []
+
+        for trace_file in root_dir.glob("*.parquet"):
+            if trace_file.is_file():
+                trace_files[split_name].append(trace_file.resolve().as_posix())
+
+    assert ["train", "val"] == list(
+        trace_files.keys()
+    ), f"Expected trace directory to contain 'train' and 'val' subdirectories, but found: {list(trace_files.keys())}"
 
     return trace_files
 
@@ -32,6 +42,7 @@ def generate_id(*args, digest_size: int = 64) -> str:
 
 class ManifestEntry(TypedDict):
     scenario_id: str
+    target_split: str
     video_name: str
     codec: str
     network: str
@@ -49,6 +60,7 @@ class Manifest:
         policies: list[str] = ["Random", "RandomWalk", "Throughput", "BOLA", "WISH"],
         permutation_columns: list[str] = [
             "video_name",
+            "target_split",
             "codec",
             "network",
             "policy",
@@ -83,7 +95,7 @@ class Manifest:
             trace_files is not None and len(trace_files) > 0
         ), f"No trace files found in directory '{self.trace_directory}'. Please ensure it contains valid .parquet trace files."
 
-        for network in self.networks:
+        for split, files in trace_files.items():
 
             permutations.extend(
                 [
@@ -91,14 +103,19 @@ class Manifest:
                         "scenario_id": generate_id(
                             video, codec, network, policy, trace_file
                         ),
+                        "target_split": split,
                         "video_name": video,
                         "codec": codec,
                         "network": network,
                         "policy": policy,
                         "trace_file": trace_file,
                     }
-                    for video, codec, policy, trace_file in product(
-                        self.videos, self.codecs, self.policies, trace_files
+                    for video, codec, policy, network, trace_file in product(
+                        self.videos,
+                        self.codecs,
+                        self.policies,
+                        self.networks,
+                        files,
                     )
                 ]
             )
