@@ -1,6 +1,6 @@
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import SimConfig, Action
+from ..Core.Types import ScenarioConfig, SimConfig, Action
 
 import numpy as np
 
@@ -10,8 +10,8 @@ class ThroughputPolicy(ABRPolicy):
 
     name = "Throughput"
 
-    def __init__(self, sim_config: SimConfig, seed: int | None = None):
-        super().__init__(simconfig=sim_config, seed=seed)
+    def __init__(self, scenario_config: ScenarioConfig, seed: int | None = None):
+        super().__init__(scenario_config=scenario_config, seed=seed)
 
         self.history_size = 5
         self.safety_factor = 0.9

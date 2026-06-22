@@ -2,7 +2,6 @@ from typing import Any, Protocol
 
 from .Types import (
     Action,
-    SimConfig,
     SimulatorState,
     ScenarioConfig,
     BitrateLadder,
@@ -43,7 +42,7 @@ class TraceProvider(Protocol):
 
 
 class ABRPolicy(Protocol):
-    def __init__(self, simconfig: SimConfig, seed: int | None = None):
+    def __init__(self, scenario_config: ScenarioConfig, seed: int | None = None):
         self.seed = seed
 
     def select_action(

@@ -201,6 +201,28 @@ class ABRSimulator:
 
         state_dict = dataclasses.asdict(state)
 
+        # Only take last action in array, since its action for current state. The rest are for previous states.
+        # Prefix: "last_" to indicate that these are previous actions, not the current one.
+        context_action: list[Action] = state_dict.get("last_actions", [])
+        if len(context_action) > 0:
+            last_action = {
+                f"last_{k}": v
+                for k, v in dataclasses.asdict(context_action[-1]).items()
+            }
+            has_last_action = True
+        else:
+            last_action = {f"last_{k}": 0.0 for k in Action.__dataclass_fields__.keys()}
+            has_last_action = False
+
+        state_dict.update(last_action)
+        state_dict["has_last_action"] = has_last_action
+
+        context_throughputs = state_dict.get("last_throughputs_bytes_per_s", [])
+        state_dict["last_throughput_bytes_per_s"] = (
+            context_throughputs[-1] if len(context_throughputs) > 0 else 0.0
+        )
+        state_dict["has_last_throughputs"] = len(context_throughputs) > 0
+
         del state_dict["last_actions"]
         del state_dict["last_throughputs_bytes_per_s"]
 

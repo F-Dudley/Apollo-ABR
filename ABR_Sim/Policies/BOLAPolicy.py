@@ -1,13 +1,13 @@
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import SimConfig, Action, BitrateLadderEntry
+from ..Core.Types import ScenarioConfig, Action, BitrateLadderEntry
 
 
 @ABRPolicyClass(name="BOLA")
 class BOLAPolicy(ABRPolicy):
 
-    def __init__(self, sim_config: SimConfig, seed: int | None = None):
-        super().__init__(simconfig=sim_config, seed=seed)
+    def __init__(self, scenario_config: ScenarioConfig, seed: int | None = None):
+        super().__init__(scenario_config=scenario_config, seed=seed)
 
         self.v_quality = 15.0
         self.gamma = 0.15

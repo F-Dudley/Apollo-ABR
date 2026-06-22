@@ -71,6 +71,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of worker threads to use for estimating file sizes.",
     )
     parser.add_argument(
+        "--chunk_size",
+        type=int,
+        default=10,
+        help="Number of files to process in each chunk when using multiple workers.",
+    )
+    parser.add_argument(
         "--buffer_rows_threshold",
         type=int,
         default=250_000,
@@ -445,7 +451,7 @@ def main():
 
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         for shard_summary in tqdm(
-            executor.map(worker_fn, transition_shards),
+            executor.map(worker_fn, transition_shards, chunksize=args.chunk_size),
             total=len(transition_shards),
             desc="Processing shards to create temporal windows...",
         ):

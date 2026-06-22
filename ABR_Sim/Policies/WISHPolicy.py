@@ -1,7 +1,7 @@
 from . import ABRPolicyClass
 
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import SimConfig, Action, BitrateLadder, BitrateLadderEntry
+from ..Core.Types import ScenarioConfig, Action, BitrateLadder, BitrateLadderEntry
 
 
 import numpy as np
@@ -9,12 +9,12 @@ import numpy as np
 
 @ABRPolicyClass(name="WISH")
 class WISHPolicy(ABRPolicy):
-    def __init__(self, sim_config: SimConfig, seed: int | None = None):
-        super().__init__(simconfig=sim_config, seed=seed)
+    def __init__(self, scenario_config: ScenarioConfig, seed: int | None = None):
+        super().__init__(scenario_config=scenario_config, seed=seed)
 
-        self.low_buffer_threshold_s = sim_config.initial_buffer_s
-        self.max_buffer_s = sim_config.max_buffer_s
-        self.segment_duration_s = sim_config.segment_duration_s
+        self.low_buffer_threshold_s = scenario_config.initial_buffer_s
+        self.max_buffer_s = scenario_config.max_buffer_s
+        self.segment_duration_s = scenario_config.segment_duration_s
         self.history_quality_len = 5
 
         self.omega = 1.0 / 8.0

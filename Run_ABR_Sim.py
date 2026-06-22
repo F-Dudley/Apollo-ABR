@@ -8,6 +8,7 @@ from typing import Any
 from tqdm.auto import tqdm
 from collections import deque
 from functools import partial
+from itertools import product
 from dataclasses import dataclass, asdict, is_dataclass
 
 from ABR_Sim.Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
@@ -42,8 +43,7 @@ def parse_args():
     parser.add_argument(
         "--trace-directory",
         type=str,
-        default=os.path.join(os.path.dirname(__file__), "traces"),
-        required=True,
+        default=os.path.join(os.path.dirname(__file__), "traces", "cooked"),
         help="Path to the directory containing network trace files.",
     )
     parser.add_argument(
@@ -59,21 +59,24 @@ def parse_args():
         help="Maximum number of worker processes to use for parallel simulations.",
     )
     parser.add_argument(
-        "--segment-duration",
+        "--segment-durations",
         type=float,
-        default=5.0,
+        nargs="+",
+        default=[5.0],
         help="Duration of each video segment in seconds.",
     )
     parser.add_argument(
-        "--max-buffer",
+        "--max-buffers",
         type=float,
-        default=30.0,
+        nargs="+",
+        default=[15.0, 30.0, 60.0, 120.0],
         help="Maximum buffer size in seconds.",
     )
     parser.add_argument(
-        "--initial-buffer",
+        "--initial-buffers",
         type=float,
-        default=0.0,
+        nargs="+",
+        default=[0.0],
         help="Initial buffer size in seconds.",
     )
     parser.add_argument(
@@ -380,7 +383,7 @@ def validate_transition_table(df: pd.DataFrame, config: ScenarioConfig) -> None:
 def run_simulation(
     permutation: ManifestEntry,
     output_directory: str = "./results",
-    sim_config: SimConfig = SimConfig(),
+    # sim_config: SimConfig = SimConfig(),
 ) -> dict[str, Any]:
 
     global segment_catalog
@@ -393,15 +396,18 @@ def run_simulation(
         nic=permutation["network"],
         trace_id=permutation["trace_file"],
         policy_name=permutation["policy"],
-        segment_duration_s=sim_config.segment_duration_s,
-        max_buffer_s=sim_config.max_buffer_s,
-        initial_buffer_s=sim_config.initial_buffer_s,
+        **permutation.get("cfg_params", {}),
+        # segment_duration_s=sim_config.segment_duration_s,
+        # max_buffer_s=sim_config.max_buffer_s,
+        # initial_buffer_s=sim_config.initial_buffer_s,
     )
 
     trace_provider = StandardTraceProvider(permutation["trace_file"], allow_loop=True)
 
     policy = PolicyRegistry.create_policy(
-        permutation["policy"], sim_config=sim_config, seed=scenario_config.scenario_id
+        permutation["policy"],
+        scenario_config=scenario_config,
+        seed=scenario_config.scenario_id,
     )
 
     # Create Buffer Manager
@@ -501,6 +507,12 @@ def main():
         print(f"Network Types: {args.network_types}")
         print(f"Policies: {PolicyRegistry.available_policies()}")
 
+    cfg_params = {
+        "max_buffer_s": args.max_buffers,
+        "initial_buffer_s": args.initial_buffers,
+        "segment_duration_s": args.segment_durations,
+    }
+
     # Load the manifest
     manifest = Manifest(
         videos,
@@ -509,12 +521,7 @@ def main():
         policies=PolicyRegistry.available_policies(),
         trace_directory=args.trace_directory,
         fresh_manifest=args.fresh_manifest,
-    )
-
-    sim_config = SimConfig(
-        segment_duration_s=args.segment_duration,
-        max_buffer_s=args.max_buffer,
-        initial_buffer_s=args.initial_buffer,
+        cfg_params=cfg_params,
     )
 
     # Scenarios
@@ -552,7 +559,6 @@ def main():
     worker_fn = partial(
         run_simulation,
         output_directory=args.output_directory,
-        sim_config=sim_config,
     )
 
     with ProcessPoolExecutor(
