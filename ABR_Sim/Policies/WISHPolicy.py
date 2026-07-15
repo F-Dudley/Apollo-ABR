@@ -1,3 +1,5 @@
+from traitlets import Callable
+
 from . import ABRPolicyClass
 
 from ..Core.Interfaces import ABRPolicy
@@ -24,7 +26,15 @@ class WISHPolicy(ABRPolicy):
 
         self.smoothed_throughput_bytes_per_s = None
 
-    def select_action(self, state_t, ladder) -> Action:
+    def select_action(
+        self,
+        state_t,
+        ladder,
+        *,
+        segment_number: int,
+        max_segment_number: int,
+        segment_lookup: Callable[[int], BitrateLadder],
+    ) -> Action:
 
         buffer_s = float(state_t.buffer_s)
 

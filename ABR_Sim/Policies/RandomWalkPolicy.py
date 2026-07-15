@@ -1,6 +1,8 @@
+from typing import Callable
+
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import ScenarioConfig, Action
+from ..Core.Types import BitrateLadder, ScenarioConfig, Action
 
 from random import Random
 
@@ -16,7 +18,15 @@ class RandomWalkPolicy(ABRPolicy):
         self.rng = Random(seed)
         self.max_step_size = max_step_size
 
-    def select_action(self, state_t, ladder) -> Action:
+    def select_action(
+        self,
+        state_t,
+        ladder,
+        *,
+        segment_number: int,
+        max_segment_number: int,
+        segment_lookup: Callable[[int], BitrateLadder],
+    ) -> Action:
         num_representations = len(ladder)
 
         if state_t.last_actions is None or len(state_t.last_actions) == 0:

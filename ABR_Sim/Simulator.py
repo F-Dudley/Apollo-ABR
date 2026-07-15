@@ -1,4 +1,5 @@
 from typing import Any
+from functools import partial
 
 from .Core.BufferManager import BufferManager
 
@@ -102,7 +103,19 @@ class ABRSimulator:
         if action is not None:
             action_t = action
         else:
-            action_t = self.policy.select_action(self.state, bitrate_ladder)
+            segment_lookup_func = partial(
+                self.catalog.get_ladder,
+                self.config.video_name,
+                self.config.codec,
+            )
+
+            action_t = self.policy.select_action(
+                self.state,
+                bitrate_ladder,
+                segment_number=self.state.segment_number,
+                max_segment_number=self.total_segments,
+                segment_lookup=segment_lookup_func,
+            )
 
         segment_info = bitrate_ladder.get_entry(action_t.bitrate_index)
 

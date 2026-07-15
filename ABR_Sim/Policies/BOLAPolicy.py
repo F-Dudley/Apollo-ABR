@@ -1,6 +1,8 @@
+from traitlets import Callable
+
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import ScenarioConfig, Action, BitrateLadderEntry
+from ..Core.Types import BitrateLadder, ScenarioConfig, Action, BitrateLadderEntry
 
 
 @ABRPolicyClass(name="BOLA")
@@ -12,7 +14,15 @@ class BOLAPolicy(ABRPolicy):
         self.v_quality = 15.0
         self.gamma = 0.15
 
-    def select_action(self, state_t, ladder) -> Action:
+    def select_action(
+        self,
+        state_t,
+        ladder,
+        *,
+        segment_number: int,
+        max_segment_number: int,
+        segment_lookup: Callable[[int], BitrateLadder],
+    ) -> Action:
         if state_t.last_actions is None or len(state_t.last_actions) == 0:
             best_idx = 0
         else:

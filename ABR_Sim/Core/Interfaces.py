@@ -1,4 +1,4 @@
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from .Types import (
     Action,
@@ -42,11 +42,19 @@ class TraceProvider(Protocol):
 
 
 class ABRPolicy(Protocol):
+    name: str
+
     def __init__(self, scenario_config: ScenarioConfig, seed: int | None = None):
         self.seed = seed
 
     def select_action(
-        self, state_t: SimulatorState, ladder: BitrateLadder
+        self,
+        state_t: SimulatorState,
+        ladder: BitrateLadder,
+        *,
+        segment_number: int,
+        max_segment_number: int,
+        segment_lookup: Callable[[int], BitrateLadder],
     ) -> Action: ...
 
 
