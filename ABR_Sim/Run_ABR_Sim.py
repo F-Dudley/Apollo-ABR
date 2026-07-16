@@ -1,4 +1,7 @@
+import hashlib
 import os
+import sys
+import importlib
 import argparse
 import pandas as pd
 import numpy as np
@@ -13,7 +16,7 @@ from .Core.Manifest import Manifest, ManifestEntry
 from .Core.Types import ScenarioConfig, Transition
 from .Core.BufferManager import BufferManager
 
-from .Policies import PolicyRegistry
+from .Policies import NeuralPolicyManager, PolicyRegistry
 from .Simulator import ABRSimulator
 from .TraceProvider.StandardTraceProvider import StandardTraceProvider
 from .TransitionCollector import TransitionCollector
@@ -78,6 +81,19 @@ def parse_args():
         nargs="+",
         default=["Eth", "LTE"],
         help="List of network types to include in the simulations (e.g., Eth, LTE).",
+    )
+    parser.add_argument(
+        "--policies",
+        type=str,
+        nargs="+",
+        default=["BOLA", "WISH", "Throughput", "Random", "RandomWalk"],
+        help="List of ABR Policies to include in the simulations (e.g., BOLA, WISH, Throughput, Random, RandomWalk).",
+    )
+    parser.add_argument(
+        "--policy-directories",
+        type=str,
+        nargs="+",
+        help="List of directories containing custom ABR policy implementations.",
     )
     parser.add_argument(
         "--fresh-manifest",
@@ -323,6 +339,37 @@ def get_video_codec_uniques(segment_catalog_path: str) -> tuple[list[str], list[
     return (segment_catalog.get_video_list(), segment_catalog.get_codec_list())
 
 
+def load_policy_directory(policy_path: Path):
+    if not policy_path.is_dir():
+        raise ValueError(f"Provided path '{policy_path}' is not a directory.")
+
+    for file in policy_path.glob("*.py"):
+
+        path_hash = hashlib.sha256(str(file.resolve()).encode()).hexdigest()[:12]
+
+        module_name = f"_abrpolicy_dynload_{file.stem}_{path_hash}"
+
+        if module_name in sys.modules:
+            importlib.reload(sys.modules[module_name])
+            continue
+
+        spec = importlib.util.spec_from_file_location(module_name, file)
+
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load module from {file}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:
+            sys.modules.pop(module_name, None)
+            raise ImportError(
+                f"Failed to load module '{module_name}' from '{file}': {e}"
+            ) from e
+
+
 if __name__ == "__main__":
 
     args = parse_args()
@@ -331,12 +378,23 @@ if __name__ == "__main__":
 
     videos, codecs = get_video_codec_uniques(args.segment_catalog)
 
+    # Dynamic Load Provided Policy Directories, so that they are available in the PolicyRegistry
+    for policy_dir in args.policy_directories or []:
+        load_policy_directory(Path(policy_dir))
+
+    # Validate Policies Availablity
+    for policy_name in args.policies:
+        if not PolicyRegistry.is_registered(policy_name):
+            raise ValueError(
+                f"Policy '{policy_name}' is not registered in the PolicyRegistry."
+            )
+
     # Load the manifest
     manifest = Manifest(
         videos,
         codecs,
         networks=args.network_types,
-        policies=PolicyRegistry.available_policies(),
+        policies=args.policies,
         trace_directory=args.trace_directory,
         fresh_manifest=args.fresh_manifest,
     )
@@ -357,6 +415,9 @@ if __name__ == "__main__":
 
     if args.max_scenarios is not None and len(scenario_entries) > args.max_scenarios:
         scenario_entries = scenario_entries[: args.max_scenarios]
+
+    neural_manager = NeuralPolicyManager("tcp://127.0.0.1:6888")
+    neural_manager.run()
 
     with ProcessPoolExecutor(
         max_workers=args.max_workers,
@@ -380,6 +441,8 @@ if __name__ == "__main__":
                 results.append(result)
             except Exception as e:
                 print(f"Simulation failed with error: {e}")
+
+    neural_manager.stop()
 
     summary_path = os.path.join(args.output_directory, "run_summary.csv")
     pd.DataFrame(results).to_csv(summary_path, index=False)

@@ -25,7 +25,7 @@ class NeuralPolicyRequest(TypedDict):
 class NeuralPolicyResponse(TypedDict):
     request_id: str
     policy_id: str
-    selected_action: Action
+    selected_index: int
     error: str | None
 
 
@@ -62,9 +62,8 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
                     f"Invalid mode {self.class_mode}. Must be one of {list(NeuralPolicyInit)}"
                 )
 
-    def _initialize_worker(self):
-        self._context = zmq.Context.instance()
-        # self._socket = self._context.socket(zmq.)
+    def _initialize_worker(self, model_path: str = "path/to/abr_jepa_model.pt"):
+        self._model = self.load_model(model_path)
 
     def _initialize_proxy(self):
         self._context = zmq.Context.instance()
@@ -96,20 +95,20 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
     @abstractmethod
     def build_payload(
         self,
-        state_t,
-        ladder,
+        state_t: SimulatorState,
+        ladder: BitrateLadder,
         segment_number: int,
         max_segment_number: int,
         segment_lookup: Callable[[int], BitrateLadder],
     ) -> NeuralPolicyRequest: ...
 
     @abstractmethod
-    def run_inference(self, payload: NeuralPolicyRequest) -> Action: ...
+    def run_inference(self, payload: NeuralPolicyRequest) -> int: ...
 
     def select_action(
         self,
-        state_t,
-        ladder,
+        state_t: SimulatorState,
+        ladder: BitrateLadder,
         *,
         segment_number: int,
         max_segment_number: int,
@@ -129,15 +128,24 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
                 f"Received response with mismatched request_id. Expected {request_id}, but got {response['request_id']}"
             )
 
-        selected_action = response.get("selected_action")
-        if selected_action is None:
+        selected_index = response.get("selected_index")
+        if selected_index is None:
             raise RuntimeError(
-                f"Received response without 'selected_action' field. Response: {response}"
+                f"Received response without 'selected_index' field. Response: {response}"
             )
 
-        return selected_action
+        entry = ladder.get_entry(selected_index)
 
-    def infer_action(self, payload: NeuralPolicyRequest) -> Action:
+        return Action(
+            bitrate_index=selected_index,
+            bitrate_kbps=entry.bitrate_kbps,
+            resolution_width=entry.resolution_width,
+            resolution_height=entry.resolution_height,
+            vmaf=entry.vmaf,
+            segment_size_bytes=entry.segment_size_bytes,
+        )
+
+    def infer_action(self, payload: NeuralPolicyRequest) -> NeuralPolicyResponse:
         self._is_worker()
 
         if self._model is None:
@@ -145,7 +153,13 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
                 "Model is not loaded. Call 'load_model' before running inference."
             )
 
-        return self.run_inference(payload)
+        selected_index = self.run_inference(payload)
+
+        return NeuralPolicyResponse(
+            request_id=payload["request_id"],
+            policy_id=payload["policy_id"],
+            selected_index=selected_index,
+        )
 
     def _generate_neural_request_id(self) -> str:
         return uuid4().hex
