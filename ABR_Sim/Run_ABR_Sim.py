@@ -15,6 +15,7 @@ from .Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
 from .Core.Manifest import Manifest, ManifestEntry
 from .Core.Types import ScenarioConfig, Transition
 from .Core.BufferManager import BufferManager
+from .Core.AssetRegistry import AssetRegistry
 
 from .Policies import NeuralPolicyManager, PolicyRegistry
 from .Simulator import ABRSimulator
@@ -94,6 +95,12 @@ def parse_args():
         type=str,
         nargs="+",
         help="List of directories containing custom ABR policy implementations.",
+    )
+    parser.add_argument(
+        "--asset-directories",
+        type=str,
+        nargs="+",
+        help="List of directories containing asset files.",
     )
     parser.add_argument(
         "--fresh-manifest",
@@ -388,6 +395,10 @@ if __name__ == "__main__":
             raise ValueError(
                 f"Policy '{policy_name}' is not registered in the PolicyRegistry."
             )
+
+    # Register Assets in Provied Directories
+    for asset_dir in args.asset_directories or []:
+        AssetRegistry.register(asset_dir, recursive=True)
 
     # Load the manifest
     manifest = Manifest(
