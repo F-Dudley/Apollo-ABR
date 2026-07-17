@@ -5,6 +5,12 @@ import msgpack
 from threading import Thread, Event
 
 from ..Core.Interfaces import ABRPolicy
+from .NeuralNetworkPolicy import (
+    NeuralNetworkPolicy,
+    NeuralPolicyRequest,
+    NeuralPolicyResponse,
+    NeuralPolicyMode,
+)
 
 
 class PolicyRegistry:
@@ -168,12 +174,6 @@ from .RandomWalkPolicy import RandomWalkPolicy
 from .ThroughputPolicy import ThroughputPolicy
 from .BOLAPolicy import BOLAPolicy
 from .WISHPolicy import WISHPolicy
-from .NeuralNetworkPolicy import (
-    NeuralNetworkPolicy,
-    NeuralPolicyMode,
-    NeuralPolicyRequest,
-    NeuralPolicyResponse,
-)
 
 __all__ = [
     "RandomPolicy",

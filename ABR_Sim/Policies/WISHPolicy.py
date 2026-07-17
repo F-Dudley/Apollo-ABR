@@ -1,4 +1,4 @@
-from traitlets import Callable
+from typing import Callable
 
 from . import ABRPolicyClass
 

@@ -16,7 +16,9 @@ dependencies = [
     "tqdm",
     "numpy",
     "pandas",
-    "pyarrow"
+    "pyarrow",
+    "pyzmq",
+    "msgpack",
 ]
 
 

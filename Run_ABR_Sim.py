@@ -1,5 +1,8 @@
+import hashlib
+import importlib
 import os
 import argparse
+import sys
 import pandas as pd
 import numpy as np
 import time
@@ -11,12 +14,13 @@ from functools import partial
 from itertools import product
 from dataclasses import dataclass, asdict, is_dataclass
 
+from ABR_Sim.Core import AssetRegistry
 from ABR_Sim.Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
 from ABR_Sim.Core.Manifest import Manifest, ManifestEntry
 from ABR_Sim.Core.Types import SimConfig, ScenarioConfig, Transition
 from ABR_Sim.Core.BufferManager import BufferManager
 
-from ABR_Sim.Policies import PolicyRegistry
+from ABR_Sim.Policies import NeuralPolicyManager, PolicyRegistry
 from ABR_Sim.Simulator import ABRSimulator
 from ABR_Sim.SegmentCatalogs.StandardSegmentCatalog import StandardSegmentCatalog
 from ABR_Sim.TraceProvider.StandardTraceProvider import StandardTraceProvider
@@ -85,6 +89,25 @@ def parse_args():
         nargs="+",
         default=["Eth", "LTE"],
         help="List of network types to include in the simulations (e.g., Eth, LTE).",
+    )
+    parser.add_argument(
+        "--policies",
+        type=str,
+        nargs="+",
+        default=["BOLA", "WISH", "Throughput", "Random", "RandomWalk"],
+        help="List of ABR Policies to include in the simulations (e.g., BOLA, WISH, Throughput, Random, RandomWalk).",
+    )
+    parser.add_argument(
+        "--policy-directories",
+        type=str,
+        nargs="+",
+        help="List of directories containing custom ABR policy implementations.",
+    )
+    parser.add_argument(
+        "--asset-directories",
+        type=str,
+        nargs="+",
+        help="List of directories containing asset files.",
     )
     parser.add_argument(
         "--fresh-manifest",
@@ -492,6 +515,37 @@ def get_video_codec_uniques(segment_catalog_path: str) -> tuple[list[str], list[
     )
 
 
+def load_policy_directory(policy_path: Path):
+    if not policy_path.is_dir():
+        raise ValueError(f"Provided path '{policy_path}' is not a directory.")
+
+    for file in policy_path.glob("*.py"):
+
+        path_hash = hashlib.sha256(str(file.resolve()).encode()).hexdigest()[:12]
+
+        module_name = f"_abrpolicy_dynload_{file.stem}_{path_hash}"
+
+        if module_name in sys.modules:
+            importlib.reload(sys.modules[module_name])
+            continue
+
+        spec = importlib.util.spec_from_file_location(module_name, file)
+
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load module from {file}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:
+            sys.modules.pop(module_name, None)
+            raise ImportError(
+                f"Failed to load module '{module_name}' from '{file}': {e}"
+            ) from e
+
+
 def main():
 
     args = parse_args()
@@ -501,11 +555,29 @@ def main():
 
     videos, codecs = get_video_codec_uniques(args.segment_catalog)
 
+    # Dynamic Load Provided Policy Directories, so that they are available in the PolicyRegistry
+    for policy_dir in args.policy_directories or []:
+        load_policy_directory(Path(policy_dir))
+
+    # Validate Policies Availablity
+    if not args.policies:
+        raise ValueError("No policies specified. Please provide at least one policy.")
+
+    for policy_name in args.policies:
+        if not PolicyRegistry.is_registered(policy_name):
+            raise ValueError(
+                f"Policy '{policy_name}' is not registered in the PolicyRegistry."
+            )
+
+    # Register Assets in Provied Directories
+    for asset_dir in args.asset_directories or []:
+        AssetRegistry.register(asset_dir, recursive=True)
+
     if args.verbose:
         print(f"Videos: {videos}")
         print(f"Codecs: {codecs}")
         print(f"Network Types: {args.network_types}")
-        print(f"Policies: {PolicyRegistry.available_policies()}")
+        print(f"Policies: {args.policies}")
 
     cfg_params = {
         "max_buffer_s": args.max_buffers,
@@ -518,7 +590,7 @@ def main():
         videos,
         codecs,
         networks=args.network_types,
-        policies=PolicyRegistry.available_policies(),
+        policies=args.policies,
         trace_directory=args.trace_directory,
         fresh_manifest=args.fresh_manifest,
         cfg_params=cfg_params,
@@ -561,6 +633,9 @@ def main():
         output_directory=args.output_directory,
     )
 
+    neural_manager = NeuralPolicyManager("tcp://127.0.0.1:6888")
+    neural_manager.run()
+
     with ProcessPoolExecutor(
         max_workers=args.max_workers,
         initializer=init_worker,
@@ -579,6 +654,8 @@ def main():
                 results.append(result)
             except Exception as e:
                 print(f"Simulation failed with error: {e}")
+
+    neural_manager.stop()
 
     pd.DataFrame(results).to_csv("run_summary.csv", index=False)
     print(f"Simulation run summary saved to '{os.path.abspath('run_summary.csv')}'.")

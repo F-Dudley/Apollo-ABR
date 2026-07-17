@@ -6,7 +6,6 @@ from typing import Any, Callable, TypedDict
 from uuid import uuid4
 from abc import ABC, abstractmethod
 
-from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
 from ..Core.Types import ScenarioConfig, Action, BitrateLadder, SimulatorState
 
