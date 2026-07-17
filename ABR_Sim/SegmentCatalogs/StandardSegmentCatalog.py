@@ -45,7 +45,7 @@ class StandardSegmentCatalog(SegmentCatalog):
                 bitrate_kbps=row["bitrate_kbps"],
                 resolution_width=row["resolution_width"],
                 resolution_height=row["resolution_height"],
-                fps=row["fps"],
+                fps=row["frame_rate"],
                 vmaf=row["vmaf"],
                 segment_size_bytes=row["encoded_segment_size_bytes"],
             )

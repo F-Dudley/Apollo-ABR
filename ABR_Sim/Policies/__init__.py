@@ -74,8 +74,15 @@ class NeuralPolicyManager:
         socket.setsockopt(zmq.LINGER, 0)
         socket.bind(self.endpoint)
 
+        poller = zmq.Poller()
+        poller.register(socket, zmq.POLLIN)
+
         try:
             while not self._stop_event.is_set():
+                events = poller.poll(100)  # Wait for 0.1 second for a message
+                if not events:
+                    continue
+
                 data = socket.recv_multipart()
                 if len(data) != 2:
                     # Invalid message format; expecting [identity, packed_request]

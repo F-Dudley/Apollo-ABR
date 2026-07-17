@@ -61,8 +61,8 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
                     f"Invalid mode {self.class_mode}. Must be one of {list(NeuralPolicyInit)}"
                 )
 
-    def _initialize_worker(self, model_path: str = "path/to/abr_jepa_model.pt"):
-        self._model = self.load_model(model_path)
+    def _initialize_worker(self):
+        self._model = self.load_model()
 
     def _initialize_proxy(self):
         self._context = zmq.Context.instance()
@@ -118,7 +118,7 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
         payload = self.build_payload(
             state_t, ladder, segment_number, max_segment_number, segment_lookup
         )
-        request_id = payload.request_id
+        request_id = payload["request_id"]
 
         response = self._request(payload)
 
@@ -137,11 +137,11 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
 
         return Action(
             bitrate_index=selected_index,
-            bitrate_kbps=entry.bitrate_kbps,
-            resolution_width=entry.resolution_width,
-            resolution_height=entry.resolution_height,
-            vmaf=entry.vmaf,
-            segment_size_bytes=entry.segment_size_bytes,
+            bitrate_kbps=entry["bitrate_kbps"],
+            resolution_width=entry["resolution_width"],
+            resolution_height=entry["resolution_height"],
+            vmaf=entry["vmaf"],
+            segment_size_bytes=entry["segment_size_bytes"],
         )
 
     def infer_action(self, payload: NeuralPolicyRequest) -> NeuralPolicyResponse:

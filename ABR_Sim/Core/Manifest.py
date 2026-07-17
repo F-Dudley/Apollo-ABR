@@ -67,6 +67,7 @@ class ManifestEntry(TypedDict):
     target_split: str
     video_name: str
     codec: str
+    frame_rate: float
     network: str
     policy: str
     trace_file: str
@@ -80,6 +81,7 @@ class Manifest:
         self,
         videos: list[str],
         codecs: list[str],
+        frame_rates: list[float],
         networks: list[str] = ["Eth", "LTE"],
         policies: list[str] = ["Random", "RandomWalk", "Throughput", "BOLA", "WISH"],
         permutation_columns: list[str] = [
@@ -88,6 +90,7 @@ class Manifest:
             "codec",
             "network",
             "policy",
+            "frame_rate",
             "trace_file",
             "cfg_params",
         ],
@@ -97,6 +100,7 @@ class Manifest:
     ):
         self.videos = videos
         self.codecs = codecs
+        self.frame_rates = frame_rates
         self.networks = networks
         self.policies = policies
         self.permutation_columns = permutation_columns
@@ -146,6 +150,7 @@ class Manifest:
                         "target_split": split,
                         "video_name": video,
                         "codec": codec,
+                        "frame_rate": frame_rate,
                         "network": network,
                         "policy": policy,
                         "trace_file": trace_file,
@@ -153,9 +158,10 @@ class Manifest:
                             json.dumps(cfg_param, sort_keys=True) if cfg_param else None
                         ),
                     }
-                    for video, codec, policy, network, trace_file, cfg_param in product(
+                    for video, codec, frame_rate, policy, network, trace_file, cfg_param in product(
                         self.videos,
                         self.codecs,
+                        self.frame_rates,
                         self.policies,
                         self.networks,
                         files,
