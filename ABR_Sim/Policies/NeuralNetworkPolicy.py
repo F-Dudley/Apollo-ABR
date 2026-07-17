@@ -90,7 +90,7 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
         return self._initialized
 
     @abstractmethod
-    def load_model(self, model_path: str) -> Any: ...
+    def load_model(self) -> Any: ...
 
     @abstractmethod
     def build_payload(

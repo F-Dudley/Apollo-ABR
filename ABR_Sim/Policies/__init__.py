@@ -122,12 +122,14 @@ class NeuralPolicyManager:
                 f"Policy '{policy_id}' is not a subclass of NeuralNetworkPolicy."
             )
 
-        policy_instance = policy_class(
+        policy_instance: NeuralNetworkPolicy = policy_class(
             scenario_config=None,
             seed=0,
             mode=NeuralPolicyMode.WORKER,
             endpoint=self.endpoint,
         )
+
+        policy_instance.load_model()
 
         self._policies[policy_id] = policy_instance
 
