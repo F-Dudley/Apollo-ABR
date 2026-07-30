@@ -111,6 +111,20 @@ def parse_args():
         help="List of directories containing asset files.",
     )
     parser.add_argument(
+        "--train-videos",
+        type=str,
+        nargs="+",
+        default=[],
+        help="List of video names to include in the training set.",
+    )
+    parser.add_argument(
+        "--val-videos",
+        type=str,
+        nargs="+",
+        default=[],
+        help="List of video names to include in the validation set.",
+    )
+    parser.add_argument(
         "--fresh-manifest",
         action="store_true",
         help="Whether to generate a fresh manifest instead of loading an existing one.",
@@ -672,7 +686,9 @@ def main():
         AssetRegistry.register(asset_dir, recursive=True)
 
     if args.verbose:
-        print(f"Videos: {videos}")
+        print(
+            f"Videos: {videos} - (Train: {args.train_videos}, Val: {args.val_videos})"
+        )
         print(f"Codecs: {codecs}")
         print(f"Network Types: {args.network_types}")
         print(f"Policies: {args.policies}")
@@ -693,6 +709,8 @@ def main():
         trace_directory=args.trace_directory,
         fresh_manifest=args.fresh_manifest,
         cfg_params=cfg_params,
+        train_videos=args.train_videos,
+        val_videos=args.val_videos,
     )
 
     # Scenarios

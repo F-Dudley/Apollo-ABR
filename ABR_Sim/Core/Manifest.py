@@ -94,6 +94,8 @@ class Manifest:
             "trace_file",
             "cfg_params",
         ],
+        train_videos: list[str] = [],
+        val_videos: list[str] = [],
         cfg_params: dict[str, Any] | None = None,
         trace_directory: str = "./traces",
         fresh_manifest: bool = False,
@@ -106,6 +108,9 @@ class Manifest:
         self.permutation_columns = permutation_columns
         self.trace_directory = trace_directory
         self.cfg_params: dict[str, Any] | None = cfg_params
+
+        # Video Splitting into Train and Validation Sets
+        self._video_map = self._split_videos(train_videos, val_videos)
 
         self._construct_manifest(fresh_manifest=fresh_manifest)
         self._validate_manifest()
@@ -130,6 +135,12 @@ class Manifest:
         ), f"No trace files found in directory '{self.trace_directory}'. Please ensure it contains valid .parquet trace files."
 
         for split, files in trace_files.items():
+            split_videos = self._video_map.get(split, [])
+            if not split_videos:
+                print(
+                    f"Warning: No videos found for split '{split}'. This split will be skipped in the manifest."
+                )
+                continue
 
             permutations.extend(
                 [
@@ -138,14 +149,11 @@ class Manifest:
                             split,
                             video,
                             codec,
+                            frame_rate,
                             network,
                             policy,
                             trace_file,
-                            (
-                                json.dumps(cfg_param, sort_keys=True)
-                                if cfg_param
-                                else None
-                            ),
+                            json.dumps(cfg_param, sort_keys=True),
                         ),
                         "target_split": split,
                         "video_name": video,
@@ -159,7 +167,7 @@ class Manifest:
                         ),
                     }
                     for video, codec, frame_rate, policy, network, trace_file, cfg_param in product(
-                        self.videos,
+                        split_videos,
                         self.codecs,
                         self.frame_rates,
                         self.policies,
@@ -207,3 +215,65 @@ class Manifest:
 
     def __len__(self) -> int:
         return len(self._manifest)
+
+    def _split_videos(
+        self, train_videos: list[str] = [], val_videos: list[str] = []
+    ) -> dict[str, list[str]]:
+
+        video_set = set(self.videos)
+        train_set = set(train_videos)
+        val_set = set(val_videos)
+
+        # Validate that the provided train and validation videos are subsets of the original video list
+        unknown_videos = (train_set | val_set) - video_set
+        if unknown_videos:
+            raise ValueError(
+                f"The following videos are specified in 'train_videos' or 'val_videos' but are not present in the original video list: {unknown_videos}. Please ensure all specified videos exist in the original list."
+            )
+
+        split_enabled = bool(train_videos or val_videos)
+
+        if not split_enabled:
+            return {
+                "train": list(self.videos),
+                "val": list(self.videos),
+            }
+
+        print(
+            f"Video splitting enabled. Train videos: {train_videos}, Validation videos: {val_videos}"
+        )
+
+        if train_videos and not val_videos:
+            val_videos = list(video_set - train_set)
+
+        elif val_videos and not train_videos:
+            train_videos = list(video_set - val_set)
+
+        else:
+            overlap = train_set.intersection(val_set)
+
+            if overlap:
+                raise ValueError(
+                    f"Overlap detected between 'train_videos' and 'val_videos': {overlap}. Please ensure they are mutually exclusive."
+                )
+
+            omit_videos = video_set - (train_set | val_set)
+            if omit_videos:
+                print(
+                    f"Warning: The following videos are omitted from both 'train_videos' and 'val_videos': {omit_videos}. They will not be included in the manifest."
+                )
+
+        if not train_videos:
+            raise ValueError(
+                "After processing, 'train_videos' is empty. Please ensure that at least one video is included in the training set."
+            )
+
+        if not val_videos:
+            raise ValueError(
+                "After processing, 'val_videos' is empty. Please ensure that at least one video is included in the validation set."
+            )
+
+        return {
+            "train": list(train_videos),
+            "val": list(val_videos),
+        }
