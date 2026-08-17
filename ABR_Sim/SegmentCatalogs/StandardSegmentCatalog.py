@@ -29,11 +29,9 @@ class StandardSegmentCatalog(SegmentCatalog):
     def get_ladder(
         self, video_name: str, codec: str, segment_number: int
     ) -> BitrateLadder:
-        filtered = self._catalog[
-            (self._catalog["video_name"] == video_name)
-            & (self._catalog["codec"] == codec)
-            & (self._catalog["segment_number"] == segment_number)
-        ]
+        filtered = self._get_filtered_catalog(video_name, codec)
+        filtered = filtered[filtered["segment_number"] == segment_number]
+
         if filtered.empty:
             raise ValueError(
                 f"No ladder entries found for video '{video_name}', codec '{codec}', segment {segment_number} in catalog."
@@ -69,6 +67,27 @@ class StandardSegmentCatalog(SegmentCatalog):
             entries.append(entry)
 
         return BitrateLadder(entries=entries)
+
+    def get_average_segment_length(self, video_name: str, codec: str) -> float:
+        filtered = self._get_filtered_catalog(video_name, codec)
+
+        return filtered["segment_duration"].mean()
+
+    def get_max_segment_length(self, video_name: str, codec: str) -> float:
+        filtered = self._get_filtered_catalog(video_name, codec)
+
+        return filtered["segment_duration"].max()
+
+    def _get_filtered_catalog(self, video_name: str, codec: str) -> pd.DataFrame:
+        filtered = self._catalog[
+            (self._catalog["video_name"] == video_name)
+            & (self._catalog["codec"] == codec)
+        ]
+        if filtered.empty:
+            raise ValueError(
+                f"No segments found for video '{video_name}' with codec '{codec}' in catalog."
+            )
+        return filtered
 
     def _load_catalog(
         self, catalog_path: str, required_length: int | None = None

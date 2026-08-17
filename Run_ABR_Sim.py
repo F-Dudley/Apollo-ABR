@@ -439,6 +439,10 @@ def run_simulation(
     global segment_catalog
     start_time = time.perf_counter()
 
+    segment_length = segment_catalog.get_max_segment_length(
+        video_name=permutation["video_name"], codec=permutation["codec"]
+    )
+
     scenario_config = ScenarioConfig(
         scenario_id=permutation["scenario_id"],
         video_name=permutation["video_name"],
@@ -447,10 +451,8 @@ def run_simulation(
         nic=permutation["network"],
         trace_id=permutation["trace_file"],
         policy_name=permutation["policy"],
+        segment_duration_s=segment_length,
         **permutation.get("cfg_params", {}),
-        # segment_duration_s=sim_config.segment_duration_s,
-        # max_buffer_s=sim_config.max_buffer_s,
-        # initial_buffer_s=sim_config.initial_buffer_s,
     )
 
     trace_provider = StandardTraceProvider(permutation["trace_file"], allow_loop=True)
@@ -696,7 +698,6 @@ def main():
     cfg_params = {
         "max_buffer_s": args.max_buffers,
         "initial_buffer_s": args.initial_buffers,
-        "segment_duration_s": args.segment_durations,
     }
 
     # Load the manifest
