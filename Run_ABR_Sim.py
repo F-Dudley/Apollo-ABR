@@ -95,7 +95,7 @@ def parse_args():
         "--policies",
         type=str,
         nargs="+",
-        default=["BOLA", "WISH", "Throughput", "Random", "RandomWalk"],
+        default=["VMAF_BOLA", "WISH", "Throughput", "Random", "RandomWalk"],
         help="List of ABR Policies to include in the simulations (e.g., BOLA, WISH, Throughput, Random, RandomWalk).",
     )
     parser.add_argument(
@@ -691,7 +691,8 @@ def main():
         print(
             f"Videos: {videos} - (Train: {args.train_videos}, Val: {args.val_videos})"
         )
-        print(f"Codecs: {codecs}")
+        print(f"- Codecs: {codecs}")
+        print(f"- Frame Rates: {frame_rates}")
         print(f"Network Types: {args.network_types}")
         print(f"Policies: {args.policies}")
 
@@ -703,8 +704,8 @@ def main():
     # Load the manifest
     manifest = Manifest(
         videos,
-        codecs,
-        frame_rates,
+        codecs=codecs,
+        frame_rates=frame_rates,
         networks=args.network_types,
         policies=args.policies,
         trace_directory=args.trace_directory,
@@ -712,6 +713,7 @@ def main():
         cfg_params=cfg_params,
         train_videos=args.train_videos,
         val_videos=args.val_videos,
+        verbose=args.verbose,
     )
 
     # Scenarios

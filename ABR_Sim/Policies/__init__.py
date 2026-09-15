@@ -180,6 +180,7 @@ from .RandomPolicy import RandomPolicy
 from .RandomWalkPolicy import RandomWalkPolicy
 from .ThroughputPolicy import ThroughputPolicy
 from .BOLAPolicy import BOLAPolicy
+from .VMAF_BOLAPolicy import VMAF_BOLAPolicy
 from .WISHPolicy import WISHPolicy
 
 __all__ = [
@@ -187,6 +188,7 @@ __all__ = [
     "RandomWalkPolicy",
     "ThroughputPolicy",
     "BOLAPolicy",
+    "VMAF_BOLAPolicy",
     "WISHPolicy",
     "NeuralNetworkPolicy",
     "NeuralPolicyMode",

@@ -45,6 +45,7 @@ class SimulatorState:
 
     last_actions: deque[Action]
     last_throughputs_bytes_per_s: deque[float]
+    last_download_time_s: float | None = None
 
     done: bool = False
 

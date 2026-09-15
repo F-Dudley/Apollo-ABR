@@ -39,13 +39,26 @@ class StandardSegmentCatalog(SegmentCatalog):
 
         entries = []
         for _, row in filtered.iterrows():
+            frame_rate = row.get("frame_rate", 0.0)  # Default to 0.0 if not present
+            vmaf = row.get("vmaf", 0.0)  # Default to 0.0 if not present
+
+            # Try both "segment_size_bytes" and "encoded_segment_size_bytes" for backward compatibility
+            segment_size_bytes = row.get("segment_size_bytes", None)
+            if segment_size_bytes is None:
+                segment_size_bytes = row.get("encoded_segment_size_bytes", 0)
+
+            if segment_size_bytes is None:
+                raise ValueError(
+                    f"Segment size not found for video '{video_name}', codec '{codec}', segment {segment_number} in catalog."
+                )
+
             entry = BitrateLadderEntry(
                 bitrate_kbps=row["bitrate_kbps"],
                 resolution_width=row["resolution_width"],
                 resolution_height=row["resolution_height"],
-                fps=row["frame_rate"],
-                vmaf=row["vmaf"],
-                segment_size_bytes=row["encoded_segment_size_bytes"],
+                fps=frame_rate,
+                vmaf=vmaf,
+                segment_size_bytes=segment_size_bytes,
             )
 
             # Possible General Values

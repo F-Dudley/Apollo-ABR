@@ -265,6 +265,8 @@ class ABRSimulator:
         next_throughputs = current_state.last_throughputs_bytes_per_s.copy()
         next_throughputs.extend(info_t["throughput_bytes_per_s"])
 
+        last_download_time_s = info_t.get("download_time_s", None)
+
         next_state = SimulatorState(
             config=self.config,
             scenario_id=current_state.scenario_id,
@@ -277,6 +279,7 @@ class ABRSimulator:
             # -- Previous States
             last_actions=next_actions,
             last_throughputs_bytes_per_s=next_throughputs,
+            last_download_time_s=last_download_time_s,
         )
 
         return next_state

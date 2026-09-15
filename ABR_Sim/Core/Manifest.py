@@ -16,6 +16,8 @@ def collect_trace_files(
     # Defined as Root -> Split -> TraceFiles
     trace_files = {}
 
+    trace_ext = {".parquet", ".csv"}
+
     for root_dir in Path(trace_directory).iterdir():
         if not root_dir.is_dir():
             continue
@@ -23,7 +25,7 @@ def collect_trace_files(
         split_name = root_dir.name
         trace_files[split_name] = []
 
-        for trace_file in root_dir.glob("*.parquet"):
+        for trace_file in root_dir.glob("*"):
             if trace_file.is_file():
                 trace_files[split_name].append(trace_file.resolve().as_posix())
 
@@ -87,10 +89,8 @@ class Manifest:
         permutation_columns: list[str] = [
             "video_name",
             "target_split",
-            "codec",
             "network",
             "policy",
-            "frame_rate",
             "trace_file",
             "cfg_params",
         ],
@@ -99,6 +99,7 @@ class Manifest:
         cfg_params: dict[str, Any] | None = None,
         trace_directory: str = "./traces",
         fresh_manifest: bool = False,
+        verbose: bool = False,
     ):
         self.videos = videos
         self.codecs = codecs
@@ -112,10 +113,10 @@ class Manifest:
         # Video Splitting into Train and Validation Sets
         self._video_map = self._split_videos(train_videos, val_videos)
 
-        self._construct_manifest(fresh_manifest=fresh_manifest)
+        self._construct_manifest(fresh_manifest=fresh_manifest, verbose=verbose)
         self._validate_manifest()
 
-    def _construct_manifest(self, fresh_manifest: bool = False):
+    def _construct_manifest(self, fresh_manifest: bool = False, verbose: bool = False):
 
         if not fresh_manifest and os.path.exists("simulation_manifest.csv"):
             print("Loading existing manifest from 'simulation_manifest.csv'...")
@@ -126,9 +127,19 @@ class Manifest:
 
         trace_files = collect_trace_files(self.trace_directory)
 
+        if verbose:
+            print(f"Trace files found in '{self.trace_directory}':")
+            for split, files in trace_files.items():
+                print(f"- {split}: {len(files)} files")
+
         cfg_permutations = (
             get_param_permutations(self.cfg_params) if self.cfg_params else [{}]
         )
+
+        if verbose:
+            print(f"Configuration parameter permutations: {len(cfg_permutations)}")
+            for idx, cfg_param in enumerate(cfg_permutations):
+                print(f"  Permutation {idx + 1}: {cfg_param}")
 
         assert (
             trace_files is not None and len(trace_files) > 0
@@ -137,9 +148,10 @@ class Manifest:
         for split, files in trace_files.items():
             split_videos = self._video_map.get(split, [])
             if not split_videos:
-                print(
-                    f"Warning: No videos found for split '{split}'. This split will be skipped in the manifest."
-                )
+                if verbose:
+                    print(
+                        f"Warning: No videos found for split '{split}'. This split will be skipped in the manifest."
+                    )
                 continue
 
             permutations.extend(
