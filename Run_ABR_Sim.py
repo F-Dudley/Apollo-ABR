@@ -6,6 +6,7 @@ import sys
 import pandas as pd
 import numpy as np
 import time
+import json
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -33,6 +34,55 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 import traceback
 
 segment_catalog: SegmentCatalog | None = None
+
+
+def parse_content_assignments(assignments: str) -> dict[str, list[str]]:
+    """
+    Parses a string of content assignments into a dictionary.
+
+    Args:
+        assignments (str): A string representing content assignments in the format
+            "split1:video1,video2;split2:video3,video4;..." or a path to a json file.
+
+    Returns:
+        dict[str, list[str]]: A dictionary mapping each split to a list of video names.
+    """
+    if os.path.isfile(assignments):
+        with open(assignments, "r") as f:
+            content_map = json.load(f)
+            if not isinstance(content_map, dict):
+                raise ValueError(
+                    f"Invalid content assignment format in file '{assignments}'. Expected a JSON object."
+                )
+            for split, videos in content_map.items():
+                if not isinstance(videos, list):
+                    raise ValueError(
+                        f"Invalid video list for split '{split}' in file '{assignments}'. Expected a list of video names."
+                    )
+
+            return content_map
+
+    content_map: dict[str, list[str]] = {}
+    if not assignments:
+        return content_map
+
+    for assignment in assignments.split(";"):
+        if assignment.strip() == "":
+            continue
+
+        if ":" not in assignment:
+            raise ValueError(
+                f"Invalid content assignment format: '{assignment}'. Expected 'split:video1,video2'."
+            )
+        split, videos_str = assignment.split(":", 1)
+        videos = [video.strip() for video in videos_str.split(",")]
+        if not videos:
+            raise ValueError(
+                f"No videos specified for split '{split}' in content assignments."
+            )
+        content_map[split.strip()] = videos
+
+    return content_map
 
 
 def parse_args():
@@ -111,18 +161,10 @@ def parse_args():
         help="List of directories containing asset files.",
     )
     parser.add_argument(
-        "--train-videos",
-        type=str,
-        nargs="+",
-        default=[],
-        help="List of video names to include in the training set.",
-    )
-    parser.add_argument(
-        "--val-videos",
-        type=str,
-        nargs="+",
-        default=[],
-        help="List of video names to include in the validation set.",
+        "--content-assignments",
+        type=parse_content_assignments,
+        default=None,
+        help="Content assignments for the simulation. Can be a string in the format 'split1:video1,video2;split2:video3,video4' or a path to a JSON file.",
     )
     parser.add_argument(
         "--fresh-manifest",
@@ -711,8 +753,7 @@ def main():
         trace_directory=args.trace_directory,
         fresh_manifest=args.fresh_manifest,
         cfg_params=cfg_params,
-        train_videos=args.train_videos,
-        val_videos=args.val_videos,
+        content_assignments=args.content_assignments,
         verbose=args.verbose,
     )
 

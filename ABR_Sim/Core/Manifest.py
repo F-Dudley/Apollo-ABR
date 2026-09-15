@@ -1,4 +1,5 @@
 import os
+from tokenize import group
 import pandas as pd
 from typing import TypedDict, Any, Generator
 from itertools import product
@@ -14,27 +15,29 @@ def collect_trace_files(
     trace_directory: str,
 ) -> dict[str, list[str]]:
     # Defined as Root -> Split -> TraceFiles
-    trace_files = {}
 
+    trace_files: dict[str, list[str]] = {}
     trace_ext = {".parquet", ".csv"}
 
     for root_dir in Path(trace_directory).iterdir():
         if not root_dir.is_dir():
             continue
 
-        split_name = root_dir.name
-        trace_files[split_name] = []
+        trace_group = root_dir.name
 
-        for trace_file in root_dir.glob("*"):
-            if trace_file.is_file():
-                trace_files[split_name].append(trace_file.resolve().as_posix())
+        files = [
+            trace_file.resolve().as_posix()
+            for trace_file in root_dir.iterdir()
+            if trace_file.is_file() and trace_file.suffix in trace_ext
+        ]
 
-    expected_splits = {"train", "val"}
-    actual_splits = set(trace_files.keys())
+        if files:
+            trace_files[trace_group] = sorted(files)
 
-    assert (
-        expected_splits == actual_splits
-    ), f"Expected trace directory to contain {expected_splits} subdirectories, but found: {actual_splits}. Please ensure the trace directory is structured correctly."
+    if not trace_files:
+        raise ValueError(
+            f"No trace files found in directory '{trace_directory}'. Please ensure it contains valid .parquet or .csv trace files organized in subdirectories."
+        )
 
     return trace_files
 
@@ -94,8 +97,7 @@ class Manifest:
             "trace_file",
             "cfg_params",
         ],
-        train_videos: list[str] = [],
-        val_videos: list[str] = [],
+        content_assignments: dict[str, list[str]] | None = None,
         cfg_params: dict[str, Any] | None = None,
         trace_directory: str = "./traces",
         fresh_manifest: bool = False,
@@ -108,10 +110,11 @@ class Manifest:
         self.policies = policies
         self.permutation_columns = permutation_columns
         self.trace_directory = trace_directory
+        self.content_assignments = content_assignments
         self.cfg_params: dict[str, Any] | None = cfg_params
 
         # Video Splitting into Train and Validation Sets
-        self._video_map = self._split_videos(train_videos, val_videos)
+        # self._video_map = self._split_videos(train_videos, val_videos)
 
         self._construct_manifest(fresh_manifest=fresh_manifest, verbose=verbose)
         self._validate_manifest()
@@ -126,6 +129,7 @@ class Manifest:
         permutations = []
 
         trace_files = collect_trace_files(self.trace_directory)
+        video_map = self._get_video_map(list(trace_files.keys()))
 
         if verbose:
             print(f"Trace files found in '{self.trace_directory}':")
@@ -145,20 +149,17 @@ class Manifest:
             trace_files is not None and len(trace_files) > 0
         ), f"No trace files found in directory '{self.trace_directory}'. Please ensure it contains valid .parquet trace files."
 
-        for split, files in trace_files.items():
-            split_videos = self._video_map.get(split, [])
-            if not split_videos:
-                if verbose:
-                    print(
-                        f"Warning: No videos found for split '{split}'. This split will be skipped in the manifest."
-                    )
-                continue
+        for trace_group, files in trace_files.items():
+            group_videos = video_map.get(trace_group, None)
+            assert (
+                group_videos is not None
+            ), f"No videos found for trace group '{trace_group}'."
 
             permutations.extend(
                 [
                     {
                         "scenario_id": generate_id(
-                            split,
+                            trace_group,
                             video,
                             codec,
                             frame_rate,
@@ -167,7 +168,7 @@ class Manifest:
                             trace_file,
                             json.dumps(cfg_param, sort_keys=True),
                         ),
-                        "target_split": split,
+                        "target_group": trace_group,
                         "video_name": video,
                         "codec": codec,
                         "frame_rate": frame_rate,
@@ -179,7 +180,7 @@ class Manifest:
                         ),
                     }
                     for video, codec, frame_rate, policy, network, trace_file, cfg_param in product(
-                        split_videos,
+                        group_videos,
                         self.codecs,
                         self.frame_rates,
                         self.policies,
@@ -228,64 +229,31 @@ class Manifest:
     def __len__(self) -> int:
         return len(self._manifest)
 
-    def _split_videos(
-        self, train_videos: list[str] = [], val_videos: list[str] = []
-    ) -> dict[str, list[str]]:
+    def _get_video_map(self, trace_groups: list[str]) -> dict[str, list[str]]:
 
         video_set = set(self.videos)
-        train_set = set(train_videos)
-        val_set = set(val_videos)
+        trace_group_set = set(trace_groups)
 
-        # Validate that the provided train and validation videos are subsets of the original video list
-        unknown_videos = (train_set | val_set) - video_set
-        if unknown_videos:
+        unknown_groups = set(self.content_assignments.keys()) - trace_group_set
+        if unknown_groups:
             raise ValueError(
-                f"The following videos are specified in 'train_videos' or 'val_videos' but are not present in the original video list: {unknown_videos}. Please ensure all specified videos exist in the original list."
+                f"Content assignments contain unknown trace groups: {unknown_groups}. Available trace groups: {trace_group_set}."
             )
 
-        split_enabled = bool(train_videos or val_videos)
+        video_map: dict[str, list[str]] = {}
 
-        if not split_enabled:
-            return {
-                "train": list(self.videos),
-                "val": list(self.videos),
-            }
+        for trace_group in trace_groups:
+            assigned_videos = self.content_assignments.get(trace_group)
+            if assigned_videos is None:
+                video_map[trace_group] = list(self.videos)
+                continue
 
-        print(
-            f"Video splitting enabled. Train videos: {train_videos}, Validation videos: {val_videos}"
-        )
-
-        if train_videos and not val_videos:
-            val_videos = list(video_set - train_set)
-
-        elif val_videos and not train_videos:
-            train_videos = list(video_set - val_set)
-
-        else:
-            overlap = train_set.intersection(val_set)
-
-            if overlap:
+            unknown_videos = set(assigned_videos) - video_set
+            if unknown_videos:
                 raise ValueError(
-                    f"Overlap detected between 'train_videos' and 'val_videos': {overlap}. Please ensure they are mutually exclusive."
+                    f"Content assignments for trace group '{trace_group}' contain unknown videos: {unknown_videos}. Available videos: {video_set}."
                 )
 
-            omit_videos = video_set - (train_set | val_set)
-            if omit_videos:
-                print(
-                    f"Warning: The following videos are omitted from both 'train_videos' and 'val_videos': {omit_videos}. They will not be included in the manifest."
-                )
+            video_map[trace_group] = assigned_videos
 
-        if not train_videos:
-            raise ValueError(
-                "After processing, 'train_videos' is empty. Please ensure that at least one video is included in the training set."
-            )
-
-        if not val_videos:
-            raise ValueError(
-                "After processing, 'val_videos' is empty. Please ensure that at least one video is included in the validation set."
-            )
-
-        return {
-            "train": list(train_videos),
-            "val": list(val_videos),
-        }
+        return video_map
