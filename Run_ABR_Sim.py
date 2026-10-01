@@ -36,53 +36,39 @@ import traceback
 segment_catalog: SegmentCatalog | None = None
 
 
-def parse_content_assignments(assignments: str) -> dict[str, list[str]]:
-    """
-    Parses a string of content assignments into a dictionary.
+def parse_content_assignments(
+    value: str | None,
+) -> dict[str, list[str]] | None:
 
-    Args:
-        assignments (str): A string representing content assignments in the format
-            "split1:video1,video2;split2:video3,video4;..." or a path to a json file.
+    if value is None:
+        return None
 
-    Returns:
-        dict[str, list[str]]: A dictionary mapping each split to a list of video names.
-    """
-    if os.path.isfile(assignments):
-        with open(assignments, "r") as f:
-            content_map = json.load(f)
-            if not isinstance(content_map, dict):
-                raise ValueError(
-                    f"Invalid content assignment format in file '{assignments}'. Expected a JSON object."
-                )
-            for split, videos in content_map.items():
-                if not isinstance(videos, list):
-                    raise ValueError(
-                        f"Invalid video list for split '{split}' in file '{assignments}'. Expected a list of video names."
-                    )
+    assignments: dict[str, list[str]] = {}
 
-            return content_map
+    for entry in value.split(";"):
+        entry = entry.strip()
 
-    content_map: dict[str, list[str]] = {}
-    if not assignments:
-        return content_map
-
-    for assignment in assignments.split(";"):
-        if assignment.strip() == "":
+        if not entry:
             continue
 
-        if ":" not in assignment:
+        if ":" not in entry:
             raise ValueError(
-                f"Invalid content assignment format: '{assignment}'. Expected 'split:video1,video2'."
+                f"Invalid content assignment '{entry}'. "
+                "Expected '<trace_group>:<video>[,<video>...]'."
             )
-        split, videos_str = assignment.split(":", 1)
-        videos = [video.strip() for video in videos_str.split(",")]
-        if not videos:
-            raise ValueError(
-                f"No videos specified for split '{split}' in content assignments."
-            )
-        content_map[split.strip()] = videos
 
-    return content_map
+        trace_group, videos = entry.split(":", 1)
+
+        trace_group = trace_group.strip()
+
+        if not trace_group:
+            raise ValueError(f"Missing trace group in '{entry}'.")
+
+        assignments[trace_group] = [
+            video.strip() for video in videos.split(",") if video.strip()
+        ]
+
+    return assignments
 
 
 def parse_args():
@@ -163,7 +149,7 @@ def parse_args():
     parser.add_argument(
         "--content-assignments",
         type=parse_content_assignments,
-        default=None,
+        default="",
         help="Content assignments for the simulation. Can be a string in the format 'split1:video1,video2;split2:video3,video4' or a path to a JSON file.",
     )
     parser.add_argument(
@@ -203,7 +189,7 @@ def validate_manifest_entry(
 
     # Validate File of "scenario_id.*" does not already exist in the output directory to avoid overwriting results
     scenario_output_path = os.path.join(
-        output_directory, entry["target_split"], f"{entry['scenario_id']}.parquet"
+        output_directory, entry["target_group"], f"{entry['scenario_id']}.parquet"
     )
     if os.path.isfile(scenario_output_path):
         if verbose:
@@ -537,7 +523,7 @@ def run_simulation(
 
         output_path = os.path.join(
             output_directory,
-            permutation["target_split"],
+            permutation["target_group"],
             f"{scenario_config.scenario_id}.parquet",
         )
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -731,7 +717,7 @@ def main():
 
     if args.verbose:
         print(
-            f"Videos: {videos} - (Train: {args.train_videos}, Val: {args.val_videos})"
+            f"Videos: {videos} - Splits: {list(args.content_assignments) if args.content_assignments else 'None'}"
         )
         print(f"- Codecs: {codecs}")
         print(f"- Frame Rates: {frame_rates}")

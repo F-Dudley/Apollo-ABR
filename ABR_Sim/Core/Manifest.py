@@ -69,7 +69,7 @@ def get_param_permutations(sim_params: dict[str, list[Any]]) -> list[dict[str, A
 
 class ManifestEntry(TypedDict):
     scenario_id: str
-    target_split: str
+    target_group: str
     video_name: str
     codec: str
     frame_rate: float
@@ -91,7 +91,9 @@ class Manifest:
         policies: list[str] = ["Random", "RandomWalk", "Throughput", "BOLA", "WISH"],
         permutation_columns: list[str] = [
             "video_name",
-            "target_split",
+            "target_group",
+            "codec",
+            "frame_rate",
             "network",
             "policy",
             "trace_file",
@@ -154,6 +156,9 @@ class Manifest:
             assert (
                 group_videos is not None
             ), f"No videos found for trace group '{trace_group}'."
+
+            if len(group_videos) == 0:
+                continue
 
             permutations.extend(
                 [
@@ -233,6 +238,9 @@ class Manifest:
 
         video_set = set(self.videos)
         trace_group_set = set(trace_groups)
+
+        if self.content_assignments is None:
+            return {trace_group: list(video_set) for trace_group in trace_groups}
 
         unknown_groups = set(self.content_assignments.keys()) - trace_group_set
         if unknown_groups:
