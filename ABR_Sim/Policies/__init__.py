@@ -111,14 +111,7 @@ class NeuralPolicyManager:
         policy = self._policies[policy_id]
 
         try:
-            selected_index = policy.infer_action(request)
-
-            return NeuralPolicyResponse(
-                request_id=request_id,
-                policy_id=policy_id,
-                selected_index=selected_index,
-                error=None,
-            )
+            return policy.infer_action(request)
         except Exception as e:
             return NeuralPolicyResponse(
                 request_id=request_id,
@@ -142,7 +135,8 @@ class NeuralPolicyManager:
             endpoint=self.endpoint,
         )
 
-        policy_instance.load_model()
+        if not policy_instance.initialized:
+            policy_instance.load_model()
 
         self._policies[policy_id] = policy_instance
 

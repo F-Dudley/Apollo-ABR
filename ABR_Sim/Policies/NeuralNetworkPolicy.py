@@ -47,24 +47,29 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
 
         # Proxy Specifics
         self._model: Any = None
-        self._initialized = False
 
         match self.class_mode:
             case NeuralPolicyMode.WORKER:
-                self._initialize_worker()
+                self._initialized = self._initialize_worker()
 
             case NeuralPolicyMode.PROXY:
-                self._initialize_proxy()
+                self._initialized = self._initialize_proxy()
 
             case _:
                 raise ValueError(
                     f"Invalid mode {self.class_mode}. Must be one of {list(NeuralPolicyInit)}"
                 )
 
-    def _initialize_worker(self):
+    @property
+    def initialized(self) -> bool:
+        return self._initialized
+
+    def _initialize_worker(self) -> bool:
         self._model = self.load_model()
 
-    def _initialize_proxy(self):
+        return True
+
+    def _initialize_proxy(self) -> bool:
         self._context = zmq.Context.instance()
         self._socket = self._context.socket(zmq.DEALER)
 
@@ -73,7 +78,7 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
         self._socket.setsockopt(zmq.LINGER, 0)
         self._socket.connect(self._endpoint)
 
-        self._initialized = True
+        return True
 
     def _is_proxy(self) -> bool:
         assert (
@@ -132,6 +137,9 @@ class NeuralNetworkPolicy(ABC, ABRPolicy):
             raise RuntimeError(
                 f"Received response without 'selected_index' field. Response: {response}"
             )
+        assert isinstance(
+            selected_index, int
+        ), f"Expected selected_index to be int, but got {type(selected_index)} - Response: {response}"
 
         entry = ladder.get_entry(selected_index)
 
