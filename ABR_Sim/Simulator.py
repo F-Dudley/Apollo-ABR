@@ -1,4 +1,5 @@
 from typing import Any
+from functools import partial
 
 from .Core.BufferManager import BufferManager
 
@@ -102,7 +103,19 @@ class ABRSimulator:
         if action is not None:
             action_t = action
         else:
-            action_t = self.policy.select_action(self.state, bitrate_ladder)
+            segment_lookup_func = partial(
+                self.catalog.get_ladder,
+                self.config.video_name,
+                self.config.codec,
+            )
+
+            action_t = self.policy.select_action(
+                self.state,
+                bitrate_ladder,
+                segment_number=self.state.segment_number,
+                max_segment_number=self.total_segments,
+                segment_lookup=segment_lookup_func,
+            )
 
         segment_info = bitrate_ladder.get_entry(action_t.bitrate_index)
 
@@ -201,6 +214,28 @@ class ABRSimulator:
 
         state_dict = dataclasses.asdict(state)
 
+        # Only take last action in array, since its action for current state. The rest are for previous states.
+        # Prefix: "last_" to indicate that these are previous actions, not the current one.
+        context_action: list[Action] = state_dict.get("last_actions", [])
+        if len(context_action) > 0:
+            last_action = {
+                f"last_{k}": v
+                for k, v in dataclasses.asdict(context_action[-1]).items()
+            }
+            has_last_action = True
+        else:
+            last_action = {f"last_{k}": 0.0 for k in Action.__dataclass_fields__.keys()}
+            has_last_action = False
+
+        state_dict.update(last_action)
+        state_dict["has_last_action"] = has_last_action
+
+        context_throughputs = state_dict.get("last_throughputs_bytes_per_s", [])
+        state_dict["last_throughput_bytes_per_s"] = (
+            context_throughputs[-1] if len(context_throughputs) > 0 else 0.0
+        )
+        state_dict["has_last_throughputs"] = len(context_throughputs) > 0
+
         del state_dict["last_actions"]
         del state_dict["last_throughputs_bytes_per_s"]
 
@@ -230,6 +265,8 @@ class ABRSimulator:
         next_throughputs = current_state.last_throughputs_bytes_per_s.copy()
         next_throughputs.extend(info_t["throughput_bytes_per_s"])
 
+        last_download_time_s = info_t.get("download_time_s", None)
+
         next_state = SimulatorState(
             config=self.config,
             scenario_id=current_state.scenario_id,
@@ -242,6 +279,7 @@ class ABRSimulator:
             # -- Previous States
             last_actions=next_actions,
             last_throughputs_bytes_per_s=next_throughputs,
+            last_download_time_s=last_download_time_s,
         )
 
         return next_state

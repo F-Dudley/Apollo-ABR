@@ -94,7 +94,7 @@ if __name__ == "__main__":
         ):
 
             scenario_id = hash_name(str(trace_file.relative_to(raw_dir)))
-            output_target = "train" if i < num_train_files else "test"
+            output_target = "train" if i < num_train_files else "val"
 
             file_output = output_dir / output_target
             file_output.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,8 @@
+from typing import Callable
+
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import SimConfig, Action
+from ..Core.Types import BitrateLadder, ScenarioConfig, Action
 
 from random import Random
 
@@ -8,13 +10,23 @@ from random import Random
 @ABRPolicyClass(name="RandomWalk")
 class RandomWalkPolicy(ABRPolicy):
 
-    def __init__(self, sim_config: SimConfig, seed: int = None, max_step_size: int = 1):
-        super().__init__(simconfig=sim_config, seed=seed)
+    def __init__(
+        self, scenario_config: ScenarioConfig, seed: int = None, max_step_size: int = 1
+    ):
+        super().__init__(scenario_config=scenario_config, seed=seed)
 
         self.rng = Random(seed)
         self.max_step_size = max_step_size
 
-    def select_action(self, state_t, ladder) -> Action:
+    def select_action(
+        self,
+        state_t,
+        ladder,
+        *,
+        segment_number: int,
+        max_segment_number: int,
+        segment_lookup: Callable[[int], BitrateLadder],
+    ) -> Action:
         num_representations = len(ladder)
 
         if state_t.last_actions is None or len(state_t.last_actions) == 0:

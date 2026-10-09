@@ -1,6 +1,9 @@
 simulation_manifest.csv
 run_summary.csv
-/results/*.*
+temporal_builder_summary.csv
+/results/
+/*temporal_results*/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

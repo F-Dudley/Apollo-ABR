@@ -1,0 +1,72 @@
+from typing import Callable
+
+from . import ABRPolicyClass
+from ..Core.Interfaces import ABRPolicy
+from ..Core.Types import BitrateLadder, ScenarioConfig, Action, BitrateLadderEntry
+
+
+@ABRPolicyClass(name="VMAF_BOLA")
+class VMAF_BOLAPolicy(ABRPolicy):
+
+    def __init__(self, scenario_config: ScenarioConfig, seed: int | None = None):
+        super().__init__(scenario_config=scenario_config, seed=seed)
+
+        self.v_quality = 15.0
+        self.gamma = 0.15
+
+    def select_action(
+        self,
+        state_t,
+        ladder,
+        *,
+        segment_number: int,
+        max_segment_number: int,
+        segment_lookup: Callable[[int], BitrateLadder],
+    ) -> Action:
+        if state_t.last_actions is None or len(state_t.last_actions) == 0:
+            best_idx = 0
+        else:
+
+            segment_duration_s = state_t.config.segment_duration_s
+
+            best_cost = float("-inf")
+            best_idx = 0
+            for idx in range(len(ladder)):
+                entry = ladder.get_entry(idx)
+                cost = self._bola_cost(
+                    vmaf=entry["vmaf"],
+                    segment_size_bytes=entry["segment_size_bytes"],
+                    segment_duration_s=segment_duration_s,
+                    buffer_s=state_t.buffer_s,
+                )
+                if cost > best_cost:
+                    best_cost = cost
+                    best_idx = idx
+
+        new_idx_entry = ladder.get_entry(best_idx)
+
+        return Action(
+            bitrate_index=best_idx,
+            bitrate_kbps=new_idx_entry["bitrate_kbps"],
+            resolution_width=new_idx_entry["resolution_width"],
+            resolution_height=new_idx_entry["resolution_height"],
+            vmaf=new_idx_entry["vmaf"],
+            segment_size_bytes=new_idx_entry["segment_size_bytes"],
+        )
+
+    def _bola_cost(
+        self,
+        vmaf: float,
+        segment_size_bytes: int,
+        segment_duration_s: float,
+        buffer_s: float,
+    ):
+
+        utility = self._normalized_vmaf(vmaf)
+
+        return (
+            self.v_quality * (utility + self.gamma * segment_duration_s) - buffer_s
+        ) / (segment_size_bytes)
+
+    def _normalized_vmaf(self, vmaf: float) -> float:
+        return vmaf / 100.0

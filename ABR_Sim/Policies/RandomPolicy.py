@@ -1,17 +1,26 @@
 from random import Random
+from typing import Callable
 from . import ABRPolicyClass
 from ..Core.Interfaces import ABRPolicy
-from ..Core.Types import SimConfig, Action, BitrateLadderEntry
+from ..Core.Types import BitrateLadder, ScenarioConfig, Action, BitrateLadderEntry
 
 
 @ABRPolicyClass(name="Random")
 class RandomPolicy(ABRPolicy):
 
-    def __init__(self, sim_config: SimConfig, seed: int = None):
-        super().__init__(simconfig=sim_config, seed=seed)
+    def __init__(self, scenario_config: ScenarioConfig, seed: int = None):
+        super().__init__(scenario_config=scenario_config, seed=seed)
         self.random = Random(seed)
 
-    def select_action(self, state_t, ladder) -> Action:
+    def select_action(
+        self,
+        state_t,
+        ladder,
+        *,
+        segment_number: int,
+        max_segment_number: int,
+        segment_lookup: Callable[[int], BitrateLadder],
+    ) -> Action:
         num_representations = len(ladder)
 
         ladder_entry: BitrateLadderEntry = ladder.get_entry(

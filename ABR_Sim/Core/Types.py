@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, asdict
 from typing import Any, Literal, Protocol, TypedDict, overload
 from collections import deque
 
@@ -20,6 +20,7 @@ class ScenarioConfig:
 
     video_name: str
     codec: str
+    frame_rate: float
     nic: NICType
     trace_id: str
     policy_name: str
@@ -44,8 +45,12 @@ class SimulatorState:
 
     last_actions: deque[Action]
     last_throughputs_bytes_per_s: deque[float]
+    last_download_time_s: float | None = None
 
     done: bool = False
+
+    def __dict__(self):
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,7 @@ class BitrateLadderEntry(TypedDict):
     bitrate_kbps: int
     resolution_width: str
     resolution_height: str
+    fps: int
     vmaf: float
 
     segment_size_bytes: int

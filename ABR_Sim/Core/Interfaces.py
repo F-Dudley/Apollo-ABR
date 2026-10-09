@@ -1,8 +1,7 @@
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from .Types import (
     Action,
-    SimConfig,
     SimulatorState,
     ScenarioConfig,
     BitrateLadder,
@@ -18,6 +17,10 @@ class SegmentCatalog(Protocol):
     def get_ladder(
         self, video_name: str, codec: str, segment_number: int
     ) -> BitrateLadder: ...
+
+    def get_average_segment_length(self, video_name: str, codec: str) -> float: ...
+
+    def get_max_segment_length(self, video_name: str, codec: str) -> float: ...
 
     def get_video_list(self) -> list[Any]: ...
 
@@ -43,11 +46,19 @@ class TraceProvider(Protocol):
 
 
 class ABRPolicy(Protocol):
-    def __init__(self, simconfig: SimConfig, seed: int | None = None):
+    name: str
+
+    def __init__(self, scenario_config: ScenarioConfig, seed: int | None = None):
         self.seed = seed
 
     def select_action(
-        self, state_t: SimulatorState, ladder: BitrateLadder
+        self,
+        state_t: SimulatorState,
+        ladder: BitrateLadder,
+        *,
+        segment_number: int,
+        max_segment_number: int,
+        segment_lookup: Callable[[int], BitrateLadder],
     ) -> Action: ...
 
 

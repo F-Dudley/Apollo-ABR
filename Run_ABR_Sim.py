@@ -1,21 +1,28 @@
+import hashlib
+import importlib
 import os
 import argparse
+import sys
 import pandas as pd
 import numpy as np
 import time
+import json
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 from tqdm.auto import tqdm
 from collections import deque
 from functools import partial
+from itertools import product
 from dataclasses import dataclass, asdict, is_dataclass
 
+from ABR_Sim.Core.AssetRegistry import AssetRegistry
 from ABR_Sim.Core.Interfaces import SegmentCatalog, ABRPolicy, TransitionInfoProvider
 from ABR_Sim.Core.Manifest import Manifest, ManifestEntry
 from ABR_Sim.Core.Types import SimConfig, ScenarioConfig, Transition
 from ABR_Sim.Core.BufferManager import BufferManager
 
-from ABR_Sim.Policies import PolicyRegistry
+from ABR_Sim.Policies import NeuralPolicyManager, PolicyRegistry
 from ABR_Sim.Simulator import ABRSimulator
 from ABR_Sim.SegmentCatalogs.StandardSegmentCatalog import StandardSegmentCatalog
 from ABR_Sim.TraceProvider.StandardTraceProvider import StandardTraceProvider
@@ -27,6 +34,41 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 import traceback
 
 segment_catalog: SegmentCatalog | None = None
+
+
+def parse_content_assignments(
+    value: str | None,
+) -> dict[str, list[str]] | None:
+
+    if value is None:
+        return None
+
+    assignments: dict[str, list[str]] = {}
+
+    for entry in value.split(";"):
+        entry = entry.strip()
+
+        if not entry:
+            continue
+
+        if ":" not in entry:
+            raise ValueError(
+                f"Invalid content assignment '{entry}'. "
+                "Expected '<trace_group>:<video>[,<video>...]'."
+            )
+
+        trace_group, videos = entry.split(":", 1)
+
+        trace_group = trace_group.strip()
+
+        if not trace_group:
+            raise ValueError(f"Missing trace group in '{entry}'.")
+
+        assignments[trace_group] = [
+            video.strip() for video in videos.split(",") if video.strip()
+        ]
+
+    return assignments
 
 
 def parse_args():
@@ -42,8 +84,7 @@ def parse_args():
     parser.add_argument(
         "--trace-directory",
         type=str,
-        default=os.path.join(os.path.dirname(__file__), "traces"),
-        required=True,
+        default=os.path.join(os.path.dirname(__file__), "traces", "cooked"),
         help="Path to the directory containing network trace files.",
     )
     parser.add_argument(
@@ -59,21 +100,24 @@ def parse_args():
         help="Maximum number of worker processes to use for parallel simulations.",
     )
     parser.add_argument(
-        "--segment-duration",
+        "--segment-durations",
         type=float,
-        default=5.0,
+        nargs="+",
+        default=[5.0],
         help="Duration of each video segment in seconds.",
     )
     parser.add_argument(
-        "--max-buffer",
+        "--max-buffers",
         type=float,
-        default=30.0,
+        nargs="+",
+        default=[15.0, 30.0, 60.0, 120.0],
         help="Maximum buffer size in seconds.",
     )
     parser.add_argument(
-        "--initial-buffer",
+        "--initial-buffers",
         type=float,
-        default=0.0,
+        nargs="+",
+        default=[0.0],
         help="Initial buffer size in seconds.",
     )
     parser.add_argument(
@@ -82,6 +126,31 @@ def parse_args():
         nargs="+",
         default=["Eth", "LTE"],
         help="List of network types to include in the simulations (e.g., Eth, LTE).",
+    )
+    parser.add_argument(
+        "--policies",
+        type=str,
+        nargs="+",
+        default=["VMAF_BOLA", "WISH", "Throughput", "Random", "RandomWalk"],
+        help="List of ABR Policies to include in the simulations (e.g., BOLA, WISH, Throughput, Random, RandomWalk).",
+    )
+    parser.add_argument(
+        "--policy-directories",
+        type=str,
+        nargs="+",
+        help="List of directories containing custom ABR policy implementations.",
+    )
+    parser.add_argument(
+        "--asset-directories",
+        type=str,
+        nargs="+",
+        help="List of directories containing asset files.",
+    )
+    parser.add_argument(
+        "--content-assignments",
+        type=parse_content_assignments,
+        default="",
+        help="Content assignments for the simulation. Can be a string in the format 'split1:video1,video2;split2:video3,video4' or a path to a JSON file.",
     )
     parser.add_argument(
         "--fresh-manifest",
@@ -120,7 +189,7 @@ def validate_manifest_entry(
 
     # Validate File of "scenario_id.*" does not already exist in the output directory to avoid overwriting results
     scenario_output_path = os.path.join(
-        output_directory, f"{entry['scenario_id']}.parquet"
+        output_directory, entry["target_group"], f"{entry['scenario_id']}.parquet"
     )
     if os.path.isfile(scenario_output_path):
         if verbose:
@@ -132,9 +201,21 @@ def validate_manifest_entry(
     return True, entry["scenario_id"]
 
 
-def init_worker(segment_catalog_path: str):
+def init_worker(
+    segment_catalog_path: str,
+    policy_directories: list[str] | None = None,
+    asset_directories: list[str] | None = None,
+) -> None:
     global segment_catalog
     segment_catalog = StandardSegmentCatalog(segment_catalog_path)
+
+    if policy_directories:
+        for policy_dir in policy_directories:
+            load_policy_directory(Path(policy_dir))
+
+    if asset_directories:
+        for asset_dir in asset_directories:
+            AssetRegistry.register(asset_dir, recursive=True)
 
 
 def values_equal(a: Any, b: Any) -> bool:
@@ -243,7 +324,7 @@ def summarise_sequence(value: Any, prefix: str) -> dict[str, Any]:
         f"{prefix}_min": float(np.min(arr)),
         f"{prefix}_max": float(np.max(arr)),
         f"{prefix}_mean": float(np.mean(arr)),
-        f"{prefix}_delta": float(arr[-1] - arr[0]) if arr.size > 1 else None,
+        f"{prefix}_delta": float(arr[-1] - arr[0]) if arr.size > 1 else 0.0,
     }
 
 
@@ -380,30 +461,34 @@ def validate_transition_table(df: pd.DataFrame, config: ScenarioConfig) -> None:
 def run_simulation(
     permutation: ManifestEntry,
     output_directory: str = "./results",
-    sim_config: SimConfig = SimConfig(),
+    # sim_config: SimConfig = SimConfig(),
 ) -> dict[str, Any]:
-
-
 
     global segment_catalog
     start_time = time.perf_counter()
+
+    segment_length = segment_catalog.get_max_segment_length(
+        video_name=permutation["video_name"], codec=permutation["codec"]
+    )
 
     scenario_config = ScenarioConfig(
         scenario_id=permutation["scenario_id"],
         video_name=permutation["video_name"],
         codec=permutation["codec"],
+        frame_rate=permutation["frame_rate"],
         nic=permutation["network"],
         trace_id=permutation["trace_file"],
         policy_name=permutation["policy"],
-        segment_duration_s=sim_config.segment_duration_s,
-        max_buffer_s=sim_config.max_buffer_s,
-        initial_buffer_s=sim_config.initial_buffer_s,
+        segment_duration_s=segment_length,
+        **permutation.get("cfg_params", {}),
     )
 
     trace_provider = StandardTraceProvider(permutation["trace_file"], allow_loop=True)
 
     policy = PolicyRegistry.create_policy(
-        permutation["policy"], sim_config=sim_config, seed=scenario_config.scenario_id
+        permutation["policy"],
+        scenario_config=scenario_config,
+        seed=scenario_config.scenario_id,
     )
 
     # Create Buffer Manager
@@ -437,8 +522,11 @@ def run_simulation(
         os.makedirs(output_directory, exist_ok=True)
 
         output_path = os.path.join(
-            output_directory, f"{scenario_config.scenario_id}.parquet"
+            output_directory,
+            permutation["target_group"],
+            f"{scenario_config.scenario_id}.parquet",
         )
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         # Flatten Transitions into Dicts
 
@@ -476,13 +564,128 @@ def run_simulation(
         }
 
 
-def get_video_codec_uniques(segment_catalog_path: str) -> tuple[list[str], list[str]]:
+def get_catalog_uniques(
+    segment_catalog_path: str,
+) -> tuple[list[str], list[str], list[float]]:
     segment_catalog = StandardSegmentCatalog(segment_catalog_path)
 
     return (
         list(segment_catalog.get_uniques("video_name")),
         list(segment_catalog.get_uniques("codec")),
+        list(segment_catalog.get_uniques("frame_rate")),
     )
+
+
+def load_policy_directory(
+    policy_path: Path,
+    *,
+    reload_modules: bool = False,
+) -> list[str]:
+    policy_path = policy_path.expanduser().resolve()
+
+    if not policy_path.is_dir():
+        raise ValueError(f"Provided path '{policy_path}' is not a directory.")
+
+    importlib.invalidate_caches()
+
+    # Determine whether this directory belongs to a parent package (parent contains '__init__.py').
+    package_parts: list[str] = []
+    package_cursor = policy_path
+
+    while (package_cursor / "__init__.py").is_file():
+        package_parts.insert(0, package_cursor.name)
+        package_cursor = package_cursor.parent
+
+    if package_parts:
+        import_root = package_cursor
+        package_name = ".".join(package_parts)
+
+        import_root_string = str(import_root)
+
+        if import_root_string not in sys.path:
+            sys.path.insert(0, import_root_string)
+
+        package_is_regular = True
+
+    else:
+        path_hash = hashlib.sha256(str(policy_path).encode("utf-8")).hexdigest()[:12]
+
+        package_name = f"_abrpolicy_dynload_" f"{policy_path.name}_{path_hash}"
+
+        if package_name not in sys.modules:
+            package = ModuleType(package_name)
+            package.__package__ = package_name
+            package.__path__ = [str(policy_path)]
+
+            package_spec = importlib.machinery.ModuleSpec(
+                package_name,
+                loader=None,
+                is_package=True,
+            )
+            package_spec.submodule_search_locations = [str(policy_path)]
+
+            package.__spec__ = package_spec
+            sys.modules[package_name] = package
+
+        for import_root in (
+            policy_path,
+            policy_path.parent,
+        ):
+            import_root_string = str(import_root)
+
+            if import_root_string not in sys.path:
+                sys.path.insert(0, import_root_string)
+
+        package_is_regular = False
+
+    loaded_modules: list[str] = []
+
+    for file in sorted(policy_path.glob("*.py")):
+        if file.name == "__init__.py" or file.name.startswith("_"):
+            continue
+
+        module_name = f"{package_name}.{file.stem}"
+
+        try:
+            if module_name in sys.modules:
+                if reload_modules:
+                    importlib.reload(sys.modules[module_name])
+
+                loaded_modules.append(module_name)
+                continue
+
+            if package_is_regular:
+                importlib.import_module(module_name)
+
+            else:
+                spec = importlib.util.spec_from_file_location(
+                    module_name,
+                    file,
+                )
+
+                if spec is None or spec.loader is None:
+                    raise ImportError(
+                        f"Could not create module specification " f"for '{file}'."
+                    )
+
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+
+                try:
+                    spec.loader.exec_module(module)
+                except Exception:
+                    sys.modules.pop(module_name, None)
+                    raise
+
+        except Exception as error:
+            raise ImportError(
+                f"Failed to load policy module "
+                f"'{module_name}' from '{file}': {error}"
+            ) from error
+
+        loaded_modules.append(module_name)
+
+    return loaded_modules
 
 
 def main():
@@ -492,28 +695,52 @@ def main():
 
     os.makedirs(args.output_directory, exist_ok=True)
 
-    videos, codecs = get_video_codec_uniques(args.segment_catalog)
+    videos, codecs, frame_rates = get_catalog_uniques(args.segment_catalog)
+
+    # Dynamic Load Provided Policy Directories, so that they are available in the PolicyRegistry
+    for policy_dir in args.policy_directories or []:
+        load_policy_directory(Path(policy_dir))
+
+    # Validate Policies Availablity
+    if not args.policies:
+        raise ValueError("No policies specified. Please provide at least one policy.")
+
+    for policy_name in args.policies:
+        if not PolicyRegistry.is_registered(policy_name):
+            raise ValueError(
+                f"Policy '{policy_name}' is not registered in the PolicyRegistry."
+            )
+
+    # Register Assets in Provied Directories
+    for asset_dir in args.asset_directories or []:
+        AssetRegistry.register(asset_dir, recursive=True)
 
     if args.verbose:
-        print(f"Videos: {videos}")
-        print(f"Codecs: {codecs}")
+        print(
+            f"Videos: {videos} - Splits: {list(args.content_assignments) if args.content_assignments else 'None'}"
+        )
+        print(f"- Codecs: {codecs}")
+        print(f"- Frame Rates: {frame_rates}")
         print(f"Network Types: {args.network_types}")
-        print(f"Policies: {PolicyRegistry.available_policies()}")
+        print(f"Policies: {args.policies}")
+
+    cfg_params = {
+        "max_buffer_s": args.max_buffers,
+        "initial_buffer_s": args.initial_buffers,
+    }
 
     # Load the manifest
     manifest = Manifest(
         videos,
-        codecs,
+        codecs=codecs,
+        frame_rates=frame_rates,
         networks=args.network_types,
-        policies=PolicyRegistry.available_policies(),
+        policies=args.policies,
         trace_directory=args.trace_directory,
         fresh_manifest=args.fresh_manifest,
-    )
-
-    sim_config = SimConfig(
-        segment_duration_s=args.segment_duration,
-        max_buffer_s=args.max_buffer,
-        initial_buffer_s=args.initial_buffer,
+        cfg_params=cfg_params,
+        content_assignments=args.content_assignments,
+        verbose=args.verbose,
     )
 
     # Scenarios
@@ -544,6 +771,8 @@ def main():
     if args.verbose:
         print(f"Total valid scenarios to run: {len(scenario_entries)}")
 
+        print(f"Available Policies: {PolicyRegistry.available_policies()}")
+
     filtered_manifest = [
         entry for entry in manifest if entry["scenario_id"] in scenario_entries
     ]
@@ -551,13 +780,19 @@ def main():
     worker_fn = partial(
         run_simulation,
         output_directory=args.output_directory,
-        sim_config=sim_config,
     )
+
+    neural_manager = NeuralPolicyManager("tcp://127.0.0.1:6888")
+    neural_manager.run()
 
     with ProcessPoolExecutor(
         max_workers=args.max_workers,
         initializer=init_worker,
-        initargs=(args.segment_catalog,),
+        initargs=(
+            args.segment_catalog,
+            args.policy_directories,
+            args.asset_directories,
+        ),
     ) as executor:
 
         results = []
@@ -572,6 +807,8 @@ def main():
                 results.append(result)
             except Exception as e:
                 print(f"Simulation failed with error: {e}")
+
+    neural_manager.stop()
 
     pd.DataFrame(results).to_csv("run_summary.csv", index=False)
     print(f"Simulation run summary saved to '{os.path.abspath('run_summary.csv')}'.")

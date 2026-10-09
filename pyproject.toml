@@ -16,7 +16,9 @@ dependencies = [
     "tqdm",
     "numpy",
     "pandas",
-    "pyarrow"
+    "pyarrow",
+    "pyzmq",
+    "msgpack",
 ]
 
 
@@ -28,6 +30,7 @@ dev = [
 
 [project.scripts]
 abr-sim = "Run_ABR_Sim:main"
+temporal-builder = "Run_Temporal_Builder:main"
 
 
 [tool.setuptools]
