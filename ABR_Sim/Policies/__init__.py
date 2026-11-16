@@ -176,6 +176,8 @@ from .ThroughputPolicy import ThroughputPolicy
 from .BOLAPolicy import BOLAPolicy
 from .VMAF_BOLAPolicy import VMAF_BOLAPolicy
 from .WISHPolicy import WISHPolicy
+from .RBPolicy import RateBasedPolicy
+from .RobustMPCPolicy import RobustMPCPolicy
 
 __all__ = [
     "RandomPolicy",
@@ -184,6 +186,8 @@ __all__ = [
     "BOLAPolicy",
     "VMAF_BOLAPolicy",
     "WISHPolicy",
+    "RateBasedPolicy",
+    "RobustMPCPolicy",
     "NeuralNetworkPolicy",
     "NeuralPolicyMode",
     "NeuralPolicyRequest",
