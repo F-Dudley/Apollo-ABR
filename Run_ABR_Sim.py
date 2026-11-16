@@ -174,6 +174,11 @@ def parse_args():
         action="store_true",
         help="Whether to print detailed logs during simulation.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-run of all scenarios, even if output files already exist.",
+    )
     return parser.parse_args()
 
 
@@ -748,21 +753,26 @@ def main():
         print(f"Limiting to first {args.max_scenarios} scenarios for testing.")
         manifest = list(manifest)[: args.max_scenarios]
 
-    worker_fn = partial(
-        validate_manifest_entry,
-        output_directory=args.output_directory,
-        verbose=args.verbose,
-    )
+    scenario_entries = set()
 
-    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-        scenario_entries = set()
-        for requires_run, scenario_id in tqdm(
-            executor.map(worker_fn, manifest, chunksize=args.chunk_size),
-            total=len(manifest),
-            desc="Validating Scenarios",
-        ):
-            if requires_run:
-                scenario_entries.add(scenario_id)
+    if args.force:
+        scenario_entries.update({entry["scenario_id"] for entry in manifest})
+    else:
+        worker_fn = partial(
+            validate_manifest_entry,
+            output_directory=args.output_directory,
+            verbose=args.verbose,
+        )
+
+        with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+            scenario_entries = set()
+            for requires_run, scenario_id in tqdm(
+                executor.map(worker_fn, manifest, chunksize=args.chunk_size),
+                total=len(manifest),
+                desc="Validating Scenarios",
+            ):
+                if requires_run:
+                    scenario_entries.add(scenario_id)
 
     if len(scenario_entries) == 0:
         print("No valid scenarios to run. Exiting.")

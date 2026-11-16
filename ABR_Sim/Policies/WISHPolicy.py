@@ -17,7 +17,7 @@ class WISHPolicy(ABRPolicy):
         self.low_buffer_threshold_s = scenario_config.initial_buffer_s
         self.max_buffer_s = scenario_config.max_buffer_s
         self.segment_duration_s = scenario_config.segment_duration_s
-        self.history_quality_len = 5
+        self.quality_history_len = 10
 
         self.omega = 1.0 / 8.0
         self.mu = 0.1
@@ -147,17 +147,12 @@ class WISHPolicy(ABRPolicy):
         return self._bitrate_bytes_per_s(entry) * self.segment_duration_s
 
     def _quality_cost(self, entry, ladder, q_recent: float) -> float:
-        """
-        Quality penalty.
-
-        q(i) is bitrate-normalised quality in [0, 1].
-        Lower cost is better.
-
-        This keeps the cost positive and penalises actions below recent quality.
-        """
         q_i = self._quality(entry, ladder)
-
-        return float(np.exp(q_recent - q_i))
+        q_N = 1.0  # q(R_N) = R_N / R_N
+        q_1 = self._quality(ladder.get_entry(0), ladder)
+        return float(
+            np.exp((q_N - q_i) + (q_recent - q_i)) / np.exp(2.0 * q_N - 2.0 * q_1)
+        )
 
     def _compute_weights(
         self, state_t, ladder: BitrateLadder
