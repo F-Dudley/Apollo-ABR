@@ -181,11 +181,26 @@ class RobustMPCPolicy(ABRPolicy):
         segment_lookup: Callable[[int], BitrateLadder],
     ) -> np.ndarray:
 
-        sizes = []
+        ref_ladder = segment_lookup(segment_number)
+        ref_keys = [
+            e["bitrate_kbps"] for e in ref_ladder.entries
+        ]  # or whatever uniquely IDs a rung
+
+        sizes = np.full((lookahead, len(ref_keys)), np.nan)
         for i in range(lookahead):
             ladder = segment_lookup(segment_number + i)
-            ladder_sizes = [entry["segment_size_bytes"] for entry in ladder.entries]
-            sizes.append(ladder_sizes)
+            by_key = {
+                e["bitrate_kbps"]: e["segment_size_bytes"] for e in ladder.entries
+            }
+            for j, k in enumerate(ref_keys):
+                if k in by_key:
+                    sizes[i, j] = by_key[k]
+
+        if np.isnan(sizes).any():
+            raise ValueError(
+                f"Missing segment sizes for lookahead segments {segment_number} to {segment_number + lookahead - 1}"
+            )
+
         return np.array(sizes)
 
     def _kbps_to_bytes_per_s(self, kbps: float) -> float:
